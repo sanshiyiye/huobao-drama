@@ -90,9 +90,19 @@
                   <h3 class="card-title">
                     {{ $t("drama.management.projectInfo") }}
                   </h3>
-                  <el-tag :type="getStatusType(drama?.status)" size="small">{{
-                    getStatusText(drama?.status)
-                  }}</el-tag>
+                  <div class="card-header-actions">
+                    <el-tag :type="getStatusType(drama?.status)" size="small">{{
+                      getStatusText(drama?.status)
+                    }}</el-tag>
+                    <el-tooltip :content="$t('common.edit')" placement="top">
+                      <el-button
+                        :icon="Edit"
+                        link
+                        class="project-edit-btn"
+                        @click="openEditProjectDialog"
+                      />
+                    </el-tooltip>
+                  </div>
                 </div>
               </template>
               <el-descriptions :column="2" border class="project-descriptions">
@@ -763,6 +773,81 @@
           >
         </template>
       </el-dialog>
+
+      <!-- 编辑项目弹框（与项目列表页一致） -->
+      <el-dialog
+        v-model="editProjectDialogVisible"
+        :title="$t('drama.editProject')"
+        width="520px"
+        :close-on-click-modal="false"
+        class="edit-dialog"
+      >
+        <el-form
+          :model="editProjectForm"
+          label-position="top"
+          v-loading="editProjectLoading"
+          class="edit-form"
+        >
+          <el-form-item :label="$t('drama.projectName')" required>
+            <el-input
+              v-model="editProjectForm.title"
+              :placeholder="$t('drama.projectNamePlaceholder')"
+              size="large"
+            />
+          </el-form-item>
+          <el-form-item :label="$t('drama.projectDesc')">
+            <el-input
+              v-model="editProjectForm.description"
+              type="textarea"
+              :rows="4"
+              :placeholder="$t('drama.projectDescPlaceholder')"
+              resize="none"
+            />
+          </el-form-item>
+          <el-form-item :label="$t('drama.style')" required>
+            <el-select
+              v-model="editProjectForm.style"
+              :placeholder="$t('drama.stylePlaceholder')"
+              size="large"
+              style="width: 100%"
+            >
+              <el-option :label="$t('drama.styles.ghibli')" value="ghibli" />
+              <el-option :label="$t('drama.styles.guoman')" value="guoman" />
+              <el-option
+                :label="$t('drama.styles.wasteland')"
+                value="wasteland"
+              />
+              <el-option
+                :label="$t('drama.styles.nostalgia')"
+                value="nostalgia"
+              />
+              <el-option :label="$t('drama.styles.pixel')" value="pixel" />
+              <el-option :label="$t('drama.styles.voxel')" value="voxel" />
+              <el-option :label="$t('drama.styles.urban')" value="urban" />
+              <el-option
+                :label="$t('drama.styles.guoman3d')"
+                value="guoman3d"
+              />
+              <el-option :label="$t('drama.styles.chibi3d')" value="chibi3d" />
+            </el-select>
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <div class="dialog-footer">
+            <el-button @click="editProjectDialogVisible = false" size="large">{{
+              $t("common.cancel")
+            }}</el-button>
+            <el-button
+              type="primary"
+              @click="saveEditProject"
+              :loading="editProjectLoading"
+              size="large"
+            >
+              {{ $t("common.save") }}
+            </el-button>
+          </div>
+        </template>
+      </el-dialog>
     </div>
   </div>
 </template>
@@ -778,6 +863,7 @@ import {
   Picture,
   Plus,
   Box,
+  Edit,
 } from "@element-plus/icons-vue";
 import { dramaAPI } from "@/api/drama";
 import { characterLibraryAPI } from "@/api/character-library";
@@ -811,6 +897,16 @@ const editingCharacter = ref<any>(null);
 const editingScene = ref<any>(null);
 const editingProp = ref<any>(null);
 const selectedExtractEpisodeId = ref<number | null>(null);
+
+// 编辑项目弹框（与项目列表页一致）
+const editProjectDialogVisible = ref(false);
+const editProjectLoading = ref(false);
+const editProjectForm = ref({
+  id: "",
+  title: "",
+  description: "",
+  style: "ghibli",
+});
 
 const newCharacter = ref({
   name: "",
@@ -927,6 +1023,41 @@ const getEpisodeStatusText = (episode: any) => {
 const formatDate = (date?: string) => {
   if (!date) return "-";
   return new Date(date).toLocaleString("zh-CN");
+};
+
+// 打开编辑项目弹框（与项目列表页一致）
+const openEditProjectDialog = () => {
+  if (!drama.value) return;
+  editProjectForm.value = {
+    id: drama.value.id,
+    title: drama.value.title,
+    description: drama.value.description || "",
+    style: drama.value.style || "ghibli",
+  };
+  editProjectDialogVisible.value = true;
+};
+
+// 保存编辑项目
+const saveEditProject = async () => {
+  if (!editProjectForm.value.title?.trim()) {
+    ElMessage.warning("请输入项目名称");
+    return;
+  }
+  editProjectLoading.value = true;
+  try {
+    await dramaAPI.update(editProjectForm.value.id, {
+      title: editProjectForm.value.title,
+      description: editProjectForm.value.description,
+      style: editProjectForm.value.style,
+    });
+    ElMessage.success("保存成功");
+    editProjectDialogVisible.value = false;
+    await loadDramaData();
+  } catch (error: any) {
+    ElMessage.error(error.message || "保存失败");
+  } finally {
+    editProjectLoading.value = false;
+  }
 };
 
 const createNewEpisode = () => {
@@ -1714,6 +1845,19 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.card-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-edit-btn {
+  color: var(--text-secondary);
+}
+.project-edit-btn:hover {
+  color: var(--accent);
 }
 
 .card-title {

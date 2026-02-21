@@ -592,27 +592,44 @@ func (s *DramaService) SaveEpisodes(dramaID string, req *SaveEpisodesRequest) er
 		return err
 	}
 
-	// 删除旧剧集
-	if err := s.db.Where("drama_id = ?", dramaIDUint).Delete(&models.Episode{}).Error; err != nil {
-		s.log.Errorw("Failed to delete old episodes", "error", err)
-		return err
-	}
-
-	// 创建新剧集（不包含场景，场景由后续步骤生成）
+	// 保存剧集：采用更新或创建的方式，避免删除旧剧集（保留角色、场景关联）
 	for _, ep := range req.Episodes {
-		episode := models.Episode{
-			DramaID:       dramaIDUint,
-			EpisodeNum:    ep.EpisodeNum,
-			Title:         ep.Title,
-			Description:   ep.Description,
-			ScriptContent: ep.ScriptContent,
-			Duration:      ep.Duration,
-			Status:        "draft",
-		}
+		var existingEpisode models.Episode
+		// 查找是否已存在该集数的剧集
+		if err := s.db.Where("drama_id = ? AND episode_num = ?", dramaIDUint, ep.EpisodeNum).First(&existingEpisode).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// 不存在，创建新剧集
+				episode := models.Episode{
+					DramaID:       dramaIDUint,
+					EpisodeNum:    ep.EpisodeNum,
+					Title:         ep.Title,
+					Description:   ep.Description,
+					ScriptContent: ep.ScriptContent,
+					Duration:      ep.Duration,
+					Status:        "draft",
+				}
 
-		if err := s.db.Create(&episode).Error; err != nil {
-			s.log.Errorw("Failed to create episode", "error", err, "episode", ep.EpisodeNum)
-			continue
+				if err := s.db.Create(&episode).Error; err != nil {
+					s.log.Errorw("Failed to create episode", "error", err, "episode", ep.EpisodeNum)
+					continue
+				}
+			} else {
+				s.log.Errorw("Failed to find episode", "error", err, "episode", ep.EpisodeNum)
+				continue
+			}
+		} else {
+			// 已存在，更新内容
+			updates := map[string]interface{}{
+				"title":         ep.Title,
+				"description":   ep.Description,
+				"script_content": ep.ScriptContent,
+				"duration":      ep.Duration,
+			}
+
+			if err := s.db.Model(&existingEpisode).Updates(updates).Error; err != nil {
+				s.log.Errorw("Failed to update episode", "error", err, "episode", ep.EpisodeNum)
+				continue
+			}
 		}
 	}
 

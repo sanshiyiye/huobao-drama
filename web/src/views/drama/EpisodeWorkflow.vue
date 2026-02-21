@@ -12,35 +12,23 @@
           </h1>
         </template>
         <template #center>
-          <div class="custom-steps">
-            <div
-              class="step-item"
-              :class="{ active: currentStep >= 0, current: currentStep === 0 }"
-            >
-              <div class="step-circle">1</div>
-              <span class="step-text">{{ $t("workflow.steps.content") }}</span>
-            </div>
-            <el-icon class="step-arrow"><ArrowRight /></el-icon>
-            <div
-              class="step-item"
-              :class="{ active: currentStep >= 1, current: currentStep === 1 }"
-            >
-              <div class="step-circle">2</div>
-              <span class="step-text">{{
-                $t("workflow.steps.generateImages")
-              }}</span>
-            </div>
-            <el-icon class="step-arrow"><ArrowRight /></el-icon>
-            <div
-              class="step-item"
-              :class="{ active: currentStep >= 2, current: currentStep === 2 }"
-            >
-              <div class="step-circle">3</div>
-              <span class="step-text">{{
-                $t("workflow.steps.splitStoryboard")
-              }}</span>
-            </div>
-          </div>
+          <el-tabs v-model="currentStep" type="card" class="workflow-tabs" @tab-click="handleTabClick">
+            <el-tab-pane
+              :label="$t('workflow.steps.content')"
+              name="0"
+              :class="{ 'step-completed': isStepCompleted(0) }"
+            />
+            <el-tab-pane
+              :label="$t('workflow.steps.generateImages')"
+              name="1"
+              :class="{ 'step-completed': isStepCompleted(1) }"
+            />
+            <el-tab-pane
+              :label="$t('workflow.steps.splitStoryboard')"
+              name="2"
+              :class="{ 'step-completed': isStepCompleted(2) }"
+            />
+          </el-tabs>
         </template>
         <template #right>
           <el-button
@@ -56,7 +44,7 @@
       <div class="content-container">
         <!-- 阶段 0: 章节内容 + 提取角色场景 -->
         <el-card
-          v-show="currentStep === 0"
+          v-show="currentStep === '0'"
           shadow="never"
           class="stage-card stage-card-fullscreen"
         >
@@ -85,21 +73,82 @@
 
             <!-- 已保存时显示内容 -->
             <div v-if="hasScript" class="overview-section">
-              <div class="episode-info">
-                <h3>
-                  {{ $t("workflow.chapterContent", { number: episodeNumber }) }}
-                </h3>
-                <el-tag type="success" size="large">{{
-                  $t("workflow.saved")
-                }}</el-tag>
+              <div class="episode-editor-header">
+                <div class="episode-editor-title">
+                  <h3>
+                    {{ $t("workflow.chapterContent", { number: episodeNumber }) }}
+                  </h3>
+                  <span class="save-status-text">({{ $t("workflow.saved") }})</span>
+                </div>
+                <div class="episode-editor-actions">
+                  <el-button
+                    v-if="!isEditing"
+                    size="small"
+                    class="editor-action-btn"
+                    @click="startEdit"
+                  >
+                    <el-icon><Edit /></el-icon>
+                    编辑剧本
+                  </el-button>
+                  <template v-if="!isEditing">
+                    <el-button
+                      size="small"
+                      class="editor-action-btn extract-action-btn"
+                      @click="handleExtractCharactersAndBackgrounds"
+                      :loading="extractingCharactersAndBackgrounds"
+                      :disabled="!hasScript"
+                    >
+                      <el-icon><MagicStick /></el-icon>
+                      提取角色和场景
+                    </el-button>
+                    <el-button
+                      size="small"
+                      class="editor-action-btn next-step-btn"
+                      @click="nextStep"
+                      :disabled="!hasExtractedData"
+                    >
+                      下一步
+                    </el-button>
+                  </template>
+                  <template v-else>
+                    <el-button
+                      type="success"
+                      size="small"
+                      class="editor-action-btn"
+                      @click="saveEdit"
+                      :loading="saving"
+                    >
+                      <el-icon><Check /></el-icon>
+                      保存
+                    </el-button>
+                    <el-button
+                      size="small"
+                      class="editor-action-btn"
+                      @click="cancelEdit"
+                    >
+                      <el-icon><Close /></el-icon>
+                      取消
+                    </el-button>
+                  </template>
+                </div>
               </div>
-              <div class="overview-content">
+
+              <div class="script-content-panel">
                 <el-input
-                  v-model="currentEpisode.script_content"
+                  v-if="!isEditing"
+                  :model-value="currentEpisode?.script_content || ''"
                   type="textarea"
-                  :rows="15"
+                  :rows="14"
                   readonly
-                  class="script-display"
+                  disabled
+                  class="script-readonly-input"
+                />
+                <el-input
+                  v-else
+                  v-model="displayScriptContent"
+                  type="textarea"
+                  :rows="14"
+                  class="script-editor-input"
                 />
               </div>
 
@@ -172,9 +221,23 @@
         </el-card>
 
         <!-- 阶段 1: 生成图片 -->
-        <el-card v-show="currentStep === 1" class="workflow-card">
+        <el-card v-show="currentStep === '1'" class="workflow-card">
           <div class="stage-body">
+            <!-- 未完成阶段1时显示空内容 -->
+            <div v-if="!hasExtractedData" class="empty-stage">
+              <el-empty
+                description="请先在章节内容阶段完成角色和场景提取"
+                :image-size="120"
+              >
+                <el-button type="primary" @click="currentStep = '0'">
+                  <el-icon><ArrowLeft /></el-icon>
+                  前往章节内容阶段
+                </el-button>
+              </el-empty>
+            </div>
+
             <!-- 角色图片生成 -->
+            <div v-else>
             <div class="image-gen-section">
               <div class="section-header">
                 <div class="section-title">
@@ -511,12 +574,27 @@
                 </div>
               </div>
             </div>
+            </div> <!-- 阶段1内容结束 -->
           </div>
         </el-card>
 
         <!-- 阶段 2: 拆分分镜 -->
-        <el-card v-show="currentStep === 2" shadow="never" class="stage-card">
+        <el-card v-show="currentStep === '2'" shadow="never" class="stage-card">
           <div class="stage-body">
+            <!-- 未完成阶段2时显示空内容 -->
+            <div v-if="!allImagesGenerated" class="empty-stage">
+              <el-empty
+                description="请先生成所有角色和场景图片后再进行分镜拆分"
+                :image-size="120"
+              >
+                <el-button type="primary" @click="currentStep = '1'">
+                  <el-icon><ArrowLeft /></el-icon>
+                  前往生成图片阶段
+                </el-button>
+              </el-empty>
+            </div>
+
+            <div v-else>
             <!-- 分镜列表 -->
             <div
               v-if="
@@ -679,51 +757,13 @@
                 </div>
               </el-empty>
             </div>
+            </div> <!-- 阶段2内容结束 -->
           </div>
         </el-card>
       </div>
 
-      <div class="actions-container">
-        <div class="action-buttons" v-show="currentStep === 0">
-          <el-button
-            type="primary"
-            size="large"
-            @click="handleExtractCharactersAndBackgrounds"
-            :loading="extractingCharactersAndBackgrounds"
-            :disabled="!hasScript"
-          >
-            <el-icon><MagicStick /></el-icon>
-            {{
-              hasExtractedData
-                ? $t("workflow.reExtract")
-                : $t("workflow.extractCharactersAndScenes")
-            }}
-          </el-button>
-          <el-button
-            type="success"
-            size="large"
-            @click="nextStep"
-            :disabled="!hasExtractedData"
-          >
-            {{ $t("workflow.nextStepGenerateImages") }}
-            <el-icon><ArrowRight /></el-icon>
-          </el-button>
-          <div v-if="!hasExtractedData" style="margin-top: 8px">
-            <el-alert
-              type="warning"
-              :closable="false"
-              style="display: inline-block"
-            >
-              <template #title>
-                <span style="font-size: 12px">
-                  {{ $t("workflow.extractWarning") }}
-                </span>
-              </template>
-            </el-alert>
-          </div>
-        </div>
-
-        <div class="action-buttons" v-show="currentStep === 1">
+      <div class="actions-container" v-show="currentStep !== '0'">
+        <div class="action-buttons" v-show="currentStep === '1'">
           <el-button size="large" @click="prevStep">
             <el-icon><ArrowLeft /></el-icon>
             {{ $t("workflow.prevStep") }}
@@ -752,7 +792,7 @@
           </div>
         </div>
 
-        <div class="action-buttons" v-show="currentStep === 2">
+        <div class="action-buttons" v-show="currentStep === '2'">
           <el-button size="large" @click="prevStep">
             <el-icon><ArrowLeft /></el-icon>
             {{ $t("workflow.prevStep") }}
@@ -1247,9 +1287,14 @@ const getStepStorageKey = () =>
 
 // 从 localStorage 恢复步骤，如果没有则默认为 0
 const savedStep = localStorage.getItem(getStepStorageKey());
-const currentStep = ref(savedStep ? parseInt(savedStep) : 0);
+const currentStep = ref(savedStep ? savedStep : "0");
 const scriptContent = ref("");
 const generatingScript = ref(false);
+const isEditing = ref(false);
+const saving = ref(false);
+const originalScriptContent = ref("");
+/** 编辑时使用的剧本内容缓冲区，避免 readonly 切换导致输入框内容丢失 */
+const editingScriptContent = ref("");
 const generatingShots = ref(false);
 const extractingCharactersAndBackgrounds = ref(false);
 const batchGeneratingCharacters = ref(false);
@@ -1315,6 +1360,22 @@ const currentEpisode = computed(() => {
   return drama.value.episodes.find((ep) => ep.episode_number === episodeNumber);
 });
 
+// 章节剧本显示/编辑内容：编辑时用缓冲区，非编辑时用 currentEpisode.script_content，避免 readonly 切换导致内容不显示
+const displayScriptContent = computed({
+  get() {
+    return isEditing.value
+      ? editingScriptContent.value
+      : (currentEpisode.value?.script_content ?? "");
+  },
+  set(val: string) {
+    if (isEditing.value) {
+      editingScriptContent.value = val;
+    } else if (currentEpisode.value) {
+      currentEpisode.value.script_content = val;
+    }
+  },
+});
+
 const hasCharacters = computed(() => {
   return (
     currentEpisode.value?.characters &&
@@ -1351,6 +1412,31 @@ const allImagesGenerated = computed(() => {
 
   return allCharsHaveImages && allScenesHaveImages;
 });
+
+// 标签页切换逻辑
+const handleTabClick = (tab: any) => {
+  const targetStep = tab.paneName;
+
+  // 检查是否可以进入目标阶段（如果阶段未完成，只显示空内容）
+  console.log(`切换到步骤: ${targetStep}`);
+};
+
+// 检查阶段是否完成
+const isStepCompleted = (step: number): boolean => {
+  if (step === 0) {
+    return hasScript.value; // 剧本已填写
+  }
+
+  if (step === 1) {
+    return hasExtractedData.value; // 角色和场景已提取
+  }
+
+  if (step === 2) {
+    return currentEpisode.value?.storyboards && currentEpisode.value.storyboards.length > 0; // 分镜已拆分
+  }
+
+  return false;
+};
 
 const goBack = () => {
   // 使用 replace 避免在历史记录中留下当前页面
@@ -1504,14 +1590,16 @@ const saveModelConfig = () => {
 };
 
 const nextStep = () => {
-  if (currentStep.value < 3) {
-    currentStep.value++;
+  const current = parseInt(currentStep.value);
+  if (current < 3) {
+    currentStep.value = (current + 1).toString();
   }
 };
 
 const prevStep = () => {
-  if (currentStep.value > 0) {
-    currentStep.value--;
+  const current = parseInt(currentStep.value);
+  if (current > 0) {
+    currentStep.value = (current - 1).toString();
   }
 };
 
@@ -1660,6 +1748,56 @@ const saveChapterScript = async () => {
 
 const editCurrentEpisodeScript = () => {
   scriptContent.value = currentEpisode.value?.script_content || "";
+};
+
+// 编辑剧本相关函数
+const startEdit = () => {
+  const content = currentEpisode.value?.script_content ?? "";
+  if (content || content === "") {
+    originalScriptContent.value = content;
+    editingScriptContent.value = content;
+    isEditing.value = true;
+  }
+};
+
+const cancelEdit = () => {
+  if (currentEpisode.value && originalScriptContent.value !== undefined) {
+    currentEpisode.value.script_content = originalScriptContent.value;
+  }
+  editingScriptContent.value = "";
+  isEditing.value = false;
+};
+
+const saveEdit = async () => {
+  const contentToSave = isEditing.value
+    ? editingScriptContent.value
+    : (currentEpisode.value?.script_content ?? "");
+  if (!contentToSave.trim()) {
+    ElMessage.warning("剧本内容不能为空");
+    return;
+  }
+
+  saving.value = true;
+  try {
+    // 先将当前编辑的内容赋值给 scriptContent 变量，因为 saveChapterScript 使用这个变量
+    scriptContent.value = contentToSave;
+    await saveChapterScript();
+    if (currentEpisode.value) {
+      currentEpisode.value.script_content = contentToSave;
+    }
+    editingScriptContent.value = "";
+    isEditing.value = false;
+    ElMessage.success("剧本已保存");
+  } catch (error: any) {
+    ElMessage.error(error.message || "保存失败");
+    // 恢复原始内容
+    if (currentEpisode.value && originalScriptContent.value !== undefined) {
+      currentEpisode.value.script_content = originalScriptContent.value;
+    }
+    editingScriptContent.value = originalScriptContent.value;
+  } finally {
+    saving.value = false;
+  }
 };
 
 const handleExtractCharactersAndBackgrounds = async () => {
@@ -2703,6 +2841,128 @@ onMounted(() => {
   }
 }
 
+.overview-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.episode-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.episode-editor-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .save-status-text {
+    color: var(--text-muted);
+    font-size: 14px;
+    font-weight: 500;
+  }
+}
+
+.episode-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.editor-action-btn {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid #2a3750;
+  background: #111d31;
+  color: #d8e3f2;
+
+  &:hover {
+    background: #17253c;
+    border-color: #3a4a67;
+    color: #f3f8ff;
+  }
+
+  &.is-disabled {
+    opacity: 0.55;
+    background: #0e1727;
+    border-color: #26344b;
+    color: #8a96ab;
+  }
+
+  :deep(.el-icon) {
+    margin-right: 4px;
+  }
+}
+
+.extract-action-btn {
+  background: #16233a;
+}
+
+.next-step-btn {
+  border-color: #4ea6e5;
+  background: linear-gradient(180deg, #92dbff 0%, #72c9f5 100%);
+  color: #0f2435;
+  font-weight: 600;
+
+  &:hover {
+    background: linear-gradient(180deg, #a4e4ff 0%, #82d0f8 100%);
+    border-color: #67b7ef;
+    color: #0a1d2b;
+  }
+}
+
+.script-content-panel {
+  background: #1f242e;
+  border: 1px solid #2f3542;
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.script-readonly-input {
+  :deep(.el-textarea__inner) {
+    min-height: 280px;
+    resize: none;
+    border: 1px solid #404757;
+    box-shadow: none;
+    background: #2a303b;
+    color: #a6aebd;
+    font-size: 14px;
+    line-height: 1.9;
+    cursor: not-allowed;
+    -webkit-text-fill-color: #a6aebd;
+  }
+
+  :deep(.el-textarea.is-disabled .el-textarea__inner) {
+    opacity: 1;
+  }
+}
+
+.script-editor-input {
+  :deep(.el-textarea__inner) {
+    min-height: 280px;
+    border: 1px solid #38517c;
+    box-shadow: none;
+    resize: vertical;
+    font-size: 14px;
+    line-height: 1.9;
+    background: #131a26;
+    color: #dbe7f5;
+  }
+}
+
 .image-gen-section {
   margin-bottom: 32px;
 
@@ -3050,5 +3310,76 @@ onMounted(() => {
 :deep(.el-upload-dragger) {
   background: var(--bg-secondary);
   border-color: var(--border-primary);
+}
+
+/* ========================================
+   Tabs / 标签页样式
+   ======================================== */
+:deep(.el-tabs) {
+  margin-bottom: 16px;
+}
+
+:deep(.el-tabs__header) {
+  margin-bottom: 16px;
+}
+
+:deep(.el-tabs__nav) {
+  border-bottom: 1px solid var(--border-primary);
+}
+
+:deep(.el-tabs__item) {
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin-right: 24px;
+  padding: 0 8px;
+}
+
+:deep(.el-tabs__item.is-active) {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+:deep(.el-tabs__item:hover) {
+  color: var(--text-primary);
+}
+
+/* 标签页完成状态样式 */
+:deep(.el-tabs__item.step-completed) {
+  color: var(--success-color);
+  font-weight: 600;
+
+  &::after {
+    content: "✓";
+    margin-left: 4px;
+    font-size: 14px;
+  }
+}
+
+/* 标签页下划线 */
+:deep(.el-tabs__active-bar) {
+  background: var(--primary-color);
+  height: 2px;
+}
+
+/* ========================================
+   Empty Stage / 空阶段样式
+   ======================================== */
+.empty-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  min-height: 300px;
+
+  :deep(.el-empty) {
+    margin-bottom: 24px;
+  }
+
+  :deep(.el-empty__description) {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-bottom: 16px;
+  }
 }
 </style>

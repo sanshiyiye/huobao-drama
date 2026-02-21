@@ -62,7 +62,7 @@
             <ActionButton
               :icon="Edit"
               :tooltip="$t('common.edit')"
-              @click="editDrama(drama.id)"
+              @click.stop="editDrama(drama.id)"
             />
             <el-popconfirm
               :title="$t('drama.deleteConfirm')"
