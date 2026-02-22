@@ -334,6 +334,9 @@ func (s *CharacterLibraryService) GenerateCharacterImage(characterID string, ima
 		prompt = character.Name
 	}
 
+	// 强制角色参考图使用单张三视图白底合成图（侧面/正面/背面）
+	prompt += ", single composite turnaround sheet with side view, front view, and back view in one image, pure white background, full body, no scene, no environment"
+
 	// 使用已经加载的 drama 的 style 信息
 	if drama.Style != "" && drama.Style != "realistic" {
 		prompt += ", " + drama.Style
@@ -405,6 +408,8 @@ func (s *CharacterLibraryService) waitAndUpdateCharacterImage(characterID uint, 
 type UpdateCharacterRequest struct {
 	Name        *string `json:"name"`
 	Role        *string `json:"role"`
+	Age         *string `json:"age"`
+	Gender      *string `json:"gender"`
 	Appearance  *string `json:"appearance"`
 	Personality *string `json:"personality"`
 	Description *string `json:"description"`
@@ -440,6 +445,12 @@ func (s *CharacterLibraryService) UpdateCharacter(characterID string, req *Updat
 	}
 	if req.Role != nil {
 		updates["role"] = *req.Role
+	}
+	if req.Age != nil {
+		updates["age"] = *req.Age
+	}
+	if req.Gender != nil {
+		updates["gender"] = *req.Gender
 	}
 	if req.Appearance != nil {
 		updates["appearance"] = *req.Appearance
@@ -502,7 +513,8 @@ func (s *CharacterLibraryService) BatchGenerateCharacterImages(characterIDs []st
 // ExtractCharactersFromScript 从分集剧本中提取角色
 func (s *CharacterLibraryService) ExtractCharactersFromScript(episodeID uint) (string, error) {
 	var episode models.Episode
-	if err := s.db.First(&episode, episodeID).Error; err != nil {
+	if err := s.db.First(&episode, "id = ?", episodeID).Error; err != nil {
+		s.log.Warnw("Episode not found", "episode_id", episodeID, "error", err)
 		return "", fmt.Errorf("episode not found")
 	}
 
@@ -534,7 +546,7 @@ func (s *CharacterLibraryService) processCharacterExtraction(taskID string, epis
 		s.log.Warnw("Failed to load drama", "error", err, "drama_id", episode.DramaID)
 	}
 
-	prompt := s.promptI18n.GetCharacterExtractionPrompt(drama.Style)
+	prompt := s.promptI18n.GetCharacterExtractionPromptTest(drama.Style)
 	userPrompt := fmt.Sprintf("【剧本内容】\n%s", script)
 
 	response, err := s.aiService.GenerateText(userPrompt, prompt, ai.WithMaxTokens(3000))
@@ -548,28 +560,74 @@ func (s *CharacterLibraryService) processCharacterExtraction(taskID string, epis
 	var extractedCharacters []struct {
 		Name        string `json:"name"`
 		Role        string `json:"role"`
+		Age         string `json:"age"`
+		Gender      string `json:"gender"`
 		Appearance  string `json:"appearance"`
 		Personality string `json:"personality"`
 		Description string `json:"description"`
 	}
 
-	if err := utils.SafeParseAIJSON(response, &extractedCharacters); err != nil {
-		s.log.Errorw("Failed to parse AI response for characters", "error", err, "response", response)
-		s.taskService.UpdateTaskError(taskID, fmt.Errorf("解析AI响应失败"))
-		return
+	// 首先尝试解析为对象包含 characters 字段的格式
+	var resp struct {
+		Characters []struct {
+			Name        string `json:"name"`
+			Role        string `json:"role"`
+			Age         string `json:"age"`
+			Gender      string `json:"gender"`
+			Appearance  string `json:"appearance"`
+			Personality string `json:"personality"`
+			Description string `json:"description"`
+		} `json:"characters"`
 	}
+
+	if err := utils.SafeParseAIJSON(response, &resp); err == nil && len(resp.Characters) > 0 {
+		extractedCharacters = resp.Characters
+	} else {
+		// 如果解析失败，尝试直接解析为数组格式
+		if err := utils.SafeParseAIJSON(response, &extractedCharacters); err != nil {
+			s.log.Errorw("Failed to parse AI response for characters", "error", err, "response", response)
+			s.taskService.UpdateTaskError(taskID, fmt.Errorf("解析AI响应失败"))
+			return
+		}
+	}
+
+	// 调试日志：打印解析后的角色数据
+	s.log.Infow("Extracted characters from AI", "characters", extractedCharacters)
 
 	var savedCharacters []models.Character
 	for _, charData := range extractedCharacters {
+		// 处理道具的年龄和性别
+		if charData.Role == "item" {
+			charData.Age = ""
+			charData.Gender = "other"
+			charData.Personality = ""
+		}
+
 		// 检查是否已存在同名角色
 		var existingCharacter models.Character
 		err := s.db.Where("drama_id = ? AND name = ?", episode.DramaID, charData.Name).First(&existingCharacter).Error
 
 		if err == nil {
-			// 如果存在，只关联，不更新（或者可以选更新，这里暂不更新）
+			// 如果同名角色已存在：同步更新提取结果，再关联到当前分集
+			updates := map[string]interface{}{
+				"role":        charData.Role,
+				"appearance":  charData.Appearance,
+				"personality": charData.Personality,
+				"description": charData.Description,
+			}
+			if charData.Age != "" {
+				updates["age"] = charData.Age
+			}
+			if charData.Gender != "" {
+				updates["gender"] = charData.Gender
+			}
+			if err := s.db.Model(&existingCharacter).Updates(updates).Error; err != nil {
+				s.log.Warnw("Failed to update existing character from extraction", "error", err, "character_id", existingCharacter.ID)
+			}
 			if err := s.db.Model(&episode).Association("Characters").Append(&existingCharacter); err != nil {
 				s.log.Warnw("Failed to associate existing character", "error", err)
 			}
+			_ = s.db.Where("id = ?", existingCharacter.ID).First(&existingCharacter)
 			savedCharacters = append(savedCharacters, existingCharacter)
 		} else {
 			// 创建新角色
@@ -580,6 +638,12 @@ func (s *CharacterLibraryService) processCharacterExtraction(taskID string, epis
 				Appearance:  &charData.Appearance,
 				Personality: &charData.Personality,
 				Description: &charData.Description,
+			}
+			if charData.Age != "" {
+				newCharacter.Age = &charData.Age
+			}
+			if charData.Gender != "" {
+				newCharacter.Gender = &charData.Gender
 			}
 			if err := s.db.Create(&newCharacter).Error; err != nil {
 				s.log.Errorw("Failed to create extracted character", "error", err)

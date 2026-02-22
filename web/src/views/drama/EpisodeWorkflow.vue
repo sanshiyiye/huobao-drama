@@ -348,12 +348,12 @@
 
                     <div class="card-actions">
                       <el-tooltip
-                        :content="$t('tooltip.editPrompt')"
+                        :content="$t('workflow.characterDesign')"
                         placement="top"
                       >
                         <el-button
                           size="small"
-                          @click="openPromptDialog(char, 'character')"
+                          @click="openCharacterDesignDialog(char)"
                           :icon="Edit"
                           circle
                         />
@@ -483,6 +483,14 @@
                         <h4>{{ scene.location }}</h4>
                         <el-tag size="small">{{ scene.time }}</el-tag>
                       </div>
+                      <el-button
+                        type="danger"
+                        size="small"
+                        :icon="Delete"
+                        circle
+                        @click="deleteScene(scene.id)"
+                        :title="$t('workflow.deleteScene')"
+                      />
                     </div>
 
                     <div class="card-image-container">
@@ -1034,6 +1042,102 @@
         </template>
       </el-dialog>
 
+      <!-- 角色设计对话框 -->
+      <el-dialog
+        v-model="characterDesignDialogVisible"
+        :title="$t('workflow.characterDesign')"
+        width="900px"
+        class="character-design-dialog"
+        destroy-on-close
+      >
+        <div class="character-design-layout">
+          <div class="character-design-left">
+            <div class="single-composite-view">
+              <span class="view-label">{{ $t('workflow.singleCompositeThreeView') }}</span>
+              <div class="view-image-wrap composite">
+                <el-image
+                  v-if="characterDesignTarget?.image_url"
+                  :src="getImageUrl(characterDesignTarget)"
+                  fit="contain"
+                  class="view-image"
+                />
+                <div v-else class="view-placeholder">
+                  <el-icon :size="40"><Picture /></el-icon>
+                </div>
+              </div>
+            </div>
+            <div class="character-design-actions">
+              <el-button size="small" @click="regenerateCharacterImageFromDesign">
+                {{ $t('workflow.changeOne') }}
+              </el-button>
+              <el-button size="small" disabled>{{ $t('workflow.history') }}</el-button>
+              <el-button size="small" @click="uploadCharacterImageFromDesign">
+                {{ $t('workflow.manualUpload') }}
+              </el-button>
+            </div>
+          </div>
+          <div class="character-design-right">
+            <el-form label-width="90px" label-position="top">
+              <el-form-item :label="$t('workflow.characterName')">
+                <el-input v-model="characterDesignForm.name" :placeholder="$t('workflow.characterName')" />
+              </el-form-item>
+              <el-form-item :label="$t('workflow.age')">
+                <el-select
+                  v-model="characterDesignForm.age"
+                  :placeholder="$t('workflow.selectAge')"
+                  clearable
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="opt in ageOptions"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="$t('workflow.gender')">
+                <el-select
+                  v-model="characterDesignForm.gender"
+                  :placeholder="$t('workflow.selectGender')"
+                  clearable
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="opt in genderOptions"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="$t('workflow.characterDescription')">
+                <el-input
+                  v-model="characterDesignForm.appearance"
+                  type="textarea"
+                  :rows="5"
+                  :placeholder="$t('workflow.characterDescriptionPlaceholder')"
+                />
+              </el-form-item>
+              <el-form-item :label="$t('workflow.backgroundStory')">
+                <el-input
+                  v-model="characterDesignForm.description"
+                  type="textarea"
+                  :rows="4"
+                  :placeholder="$t('workflow.backgroundStoryPlaceholder')"
+                />
+              </el-form-item>
+            </el-form>
+          </div>
+        </div>
+        <template #footer>
+          <el-button @click="characterDesignDialogVisible = false">{{ $t('common.cancel') }}</el-button>
+          <el-button type="primary" :loading="characterDesignSaving" @click="saveCharacterDesign">
+            {{ $t('common.confirm') }}
+          </el-button>
+        </template>
+      </el-dialog>
+
       <!-- 角色库选择对话框 -->
       <el-dialog
         v-model="libraryDialogVisible"
@@ -1320,6 +1424,34 @@ const currentEditType = ref<"character" | "scene">("character");
 const editPrompt = ref("");
 const libraryItems = ref<any[]>([]);
 const currentUploadTarget = ref<any>(null);
+
+// 角色设计弹框
+const characterDesignDialogVisible = ref(false);
+const characterDesignTarget = ref<any>(null);
+const characterDesignSaving = ref(false);
+const characterDesignForm = ref({
+  name: "",
+  age: "",
+  gender: "",
+  appearance: "",
+  description: ""
+});
+const ageOptions = [
+  { value: "婴儿", label: "婴儿" },
+  { value: "幼儿", label: "幼儿" },
+  { value: "儿童", label: "儿童" },
+  { value: "青少年", label: "青少年" },
+  { value: "青年", label: "青年" },
+  { value: "成年", label: "成年" },
+  { value: "中年", label: "中年" },
+  { value: "年长者", label: "年长者" },
+  { value: "老年", label: "老年" }
+];
+const genderOptions = [
+  { value: "男", label: "男" },
+  { value: "女", label: "女" },
+  { value: "其他", label: "其他" }
+];
 
 // 添加场景相关
 const newScene = ref<any>({
@@ -2268,6 +2400,51 @@ const saveShotEdit = async () => {
 };
 
 // 对话框相关方法
+const openCharacterDesignDialog = (char: any) => {
+  console.log("Opening character design dialog for char:", char);
+  characterDesignTarget.value = char;
+  characterDesignForm.value = {
+    name: char.name ?? "",
+    age: char.age || "",
+    gender: char.gender || "",
+    appearance: char.appearance ?? "",
+    description: char.description ?? ""
+  };
+  console.log("Set characterDesignForm.value:", characterDesignForm.value);
+  characterDesignDialogVisible.value = true;
+};
+const saveCharacterDesign = async () => {
+  if (!characterDesignTarget.value?.id) return;
+  characterDesignSaving.value = true;
+  try {
+    await characterLibraryAPI.updateCharacter(characterDesignTarget.value.id, {
+      name: characterDesignForm.value.name || undefined,
+      age: characterDesignForm.value.age || undefined,
+      gender: characterDesignForm.value.gender || undefined,
+      appearance: characterDesignForm.value.appearance || undefined,
+      description: characterDesignForm.value.description || undefined
+    });
+    ElMessage.success($t("common.updateSuccess") || "保存成功");
+    await loadDramaData();
+    characterDesignDialogVisible.value = false;
+  } catch (e: any) {
+    ElMessage.error(e?.message || "保存失败");
+  } finally {
+    characterDesignSaving.value = false;
+  }
+};
+const regenerateCharacterImageFromDesign = () => {
+  if (characterDesignTarget.value?.id) {
+    generateCharacterImage(characterDesignTarget.value.id);
+  }
+};
+const uploadCharacterImageFromDesign = () => {
+  if (characterDesignTarget.value?.id) {
+    uploadCharacterImage(characterDesignTarget.value.id);
+    characterDesignDialogVisible.value = false;
+  }
+};
+
 const openPromptDialog = (item: any, type: "character" | "scene") => {
   currentEditItem.value = item;
   currentEditItem.value.name = item.name || item.location;
@@ -2415,6 +2592,28 @@ const deleteCharacter = async (characterId: number) => {
 
     await characterLibraryAPI.deleteCharacter(characterId);
     ElMessage.success("角色已删除");
+    await loadDramaData();
+  } catch (error: any) {
+    if (error !== "cancel") {
+      ElMessage.error(error.message || "删除失败");
+    }
+  }
+};
+
+const deleteScene = async (sceneId: number) => {
+  try {
+    await ElMessageBox.confirm(
+      $t("workflow.deleteSceneConfirm"),
+      $t("workflow.deleteConfirmTitle"),
+      {
+        type: "warning",
+        confirmButtonText: $t("workflow.confirmButtonText"),
+        cancelButtonText: $t("workflow.cancelButtonText"),
+      },
+    );
+
+    await dramaAPI.deleteScene(sceneId);
+    ElMessage.success("场景已删除");
     await loadDramaData();
   } catch (error: any) {
     if (error !== "cancel") {
@@ -3169,6 +3368,62 @@ onMounted(() => {
   .character-item,
   .scene-item {
     min-height: 360px;
+  }
+}
+
+// 角色设计对话框
+.character-design-dialog {
+  .character-design-layout {
+    display: flex;
+    gap: 24px;
+    min-height: 360px;
+  }
+  .character-design-left {
+    flex: 0 0 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .single-composite-view {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .view-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .view-image-wrap {
+    width: 100%;
+    aspect-ratio: 1/1;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+  }
+  .view-image-wrap.composite {
+    min-height: 260px;
+  }
+  .view-image {
+    width: 100%;
+    height: 100%;
+  }
+  .view-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+  }
+  .character-design-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .character-design-right {
+    flex: 1;
+    min-width: 0;
   }
 }
 

@@ -321,7 +321,7 @@ You must return a **JSON object** with the following structure:
   "description": "Complete action sequence of a swordsman in black from drawing a blade to striking."
 }
 
-`, style, imageRatio)
+`, style)
 	}
 
 	return fmt.Sprintf(`**Role:** 你是一位精通视觉叙事与图像生成提示词的专家。你需要生成一个描述 3x3 九宫格动作序列的提示词。
@@ -450,44 +450,366 @@ func (p *PromptI18n) GetCharacterExtractionPrompt(style string) string {
 	if p.IsEnglish() {
 		return fmt.Sprintf(`You are a professional character analyst, skilled at extracting and analyzing character information from scripts.
 
-Your task is to extract and organize detailed character settings for all characters appearing in the script based on the provided script content.
+Your task is to extract and organize detailed character settings for all characters and core items appearing in the script based on the provided script content.
 
 Requirements:
-1. Extract all characters with names (ignore unnamed passersby or background characters)
+1. Extract all characters with names (ignore unnamed passersby or background characters) and key props important to the plot
 2. For each character, extract:
    - name: Character name
    - role: Character role (main/supporting/minor)
    - appearance: Physical appearance description (150-300 words)
    - personality: Personality traits (100-200 words)
-   - description: Background story and character relationships (100-200 words)
-3. Appearance must be detailed enough for AI image generation, including: gender, age, body type, facial features, hairstyle, clothing style, etc. but do not include any scene, background, environment information
-4. Main characters require more detailed descriptions, supporting characters can be simplified
+   - description: Background story and character relationships (100-200 words). Must be consistent with the script.
+   - age: Age range (string, one of: baby/infant/child/teenager/young adult/middle-aged/elderly)
+   - gender: Gender (string: male/female/other)
+3. For each key prop, extract:
+   - name: Prop name
+   - role: "item"
+   - appearance: Prop appearance description (100-200 words)
+   - personality: ""
+   - description: Role in the story and significance
+   - age: ""
+   - gender: "other"
+4. Appearance MUST include all of the following (none may be omitted):
+   - Image format: character reference MUST be a single composite turnaround sheet that includes side, front, and back views in ONE image with a pure white background. The description must be suitable for generating this format (full body, no background, no scene, no environment)
+   - Also include: body type, facial features, hairstyle, clothing style, etc. Do NOT include any scene, background, or environment information, and do NOT include age and gender information (these will be extracted separately)
+5. Generate character appearance according to the script content:
+   - Determine racial characteristics based on the script's cultural and historical background
+   - If the script involves Eastern cultures (such as Chinese, Japanese, Korean, etc.), the character should have East Asian racial characteristics
+   - If the script involves Western cultures (such as European, American, etc.), the character should have Western racial characteristics
+   - If the script involves other cultures (such as African, Middle Eastern, South Asian, etc.), the character should have corresponding racial characteristics
+   - For modern or futuristic settings without specific cultural references, you can use neutral racial characteristics
+   - Ensure the character appearance matches the script's background and context
+6. Main characters require more detailed descriptions, supporting characters can be simplified
 - **Style Requirement**: %s
 - **Image Ratio**: %s
 Output Format:
 **CRITICAL: Return ONLY a valid JSON array. Do NOT include any markdown code blocks, explanations, or other text. Start directly with [ and end with ].**
-Each element is a character object containing the above fields.`, style, imageRatio)
+Each element is a character object containing: name, role, appearance, personality, description, age (string, one of the age stages above), gender (string: male/female/other).`, style, imageRatio)
 	}
 
 	return fmt.Sprintf(`你是一个专业的角色分析师，擅长从剧本中提取和分析角色信息。
 
-你的任务是根据提供的剧本内容，提取并整理剧中出现的所有角色的详细设定。
+你的任务是根据提供的剧本内容，提取并整理剧中出现的所有角色和核心道具的详细设定。
 
 要求：
-1. 提取所有有名字的角色（忽略无名路人或背景角色）
+1. 提取所有有名字的角色（忽略无名路人或背景角色）和对剧情发展有重要作用的核心道具
 2. 对每个角色，提取以下信息：
    - name: 角色名字
    - role: 角色类型（main/supporting/minor）
    - appearance: 外貌描述（150-300字）
    - personality: 性格特点（100-200字）
-   - description: 背景故事和角色关系（100-200字）
-3. 外貌描述要足够详细，适合AI生成图片，包括：性别、年龄、体型、面部特征、发型、服装风格等,但不要包含任何场景、背景、环境等信息
-4. 主要角色需要更详细的描述，次要角色可以简化
+   - description: 背景故事与角色关系（100-200字），须与剧本一致
+   - age: 年龄范围（字符串，必须是以下之一：婴儿/幼儿/儿童/少年/青年/中年/老年）
+   - gender: 性别（字符串：男/女/其他）
+3. 对每个核心道具，提取以下信息：
+   - name: 道具名称
+   - role: "item"
+   - appearance: 道具外观描述（100-200字）
+   - personality: ""
+   - description: 在剧中的作用和意义
+   - age: ""
+   - gender: "other"
+4. 外貌描述（appearance）必须同时包含以下内容，缺一不可：
+   - 图片形式：角色参考图必须是单张三视图合成图（同一张图内包含侧面、正面、背面），且为纯白底（white background）；外貌描述须适合生成此类参考图（全身、无背景、无场景、无环境）
+   - 此外可包括：体型、面部特征、发型、服装风格等。不要包含任何场景、背景、环境等信息，也不要包含年龄和性别信息（这些将单独提取）
+5. 根据剧本内容生成角色形象：
+   - 根据剧本的文化和历史背景确定种族特征
+   - 如果剧本涉及东方文化（如中国、日本、韩国等），角色应具有东亚人种特征
+   - 如果剧本涉及西方文化（如欧洲、美洲等），角色应具有西方人种特征
+   - 如果剧本涉及其他文化（如非洲、中东、南亚等），角色应具有相应的种族特征
+   - 对于现代或未来题材且无特定文化参考的剧本，可以使用中性种族特征
+   - 确保角色形象与剧本背景和上下文相符
+6. 主要角色需要更详细的描述，次要角色可以简化
 - **风格要求**：%s
 - **图片比例**：%s
 输出格式：
 **重要：必须只返回纯JSON数组，不要包含任何markdown代码块、说明文字或其他内容。直接以 [ 开头，以 ] 结尾。**
-每个元素是一个角色对象，包含上述字段。`, style, imageRatio)
+每个元素是一个角色对象，必须包含字段：name, role, appearance, personality, description, age（字符串，取上述年龄阶段之一）, gender（字符串：男/女/其他）。`, style, imageRatio)
+}
+
+// GetCharacterExtractionPromptTest 获取测试用的角色提取提示词
+func (p *PromptI18n) GetCharacterExtractionPromptTest(style string) string {
+	imageRatio := "16:9"
+		if p.IsEnglish() {
+			return fmt.Sprintf(`You are an experienced creative director and AI video producer. Your task is to extract and organize detailed character settings for all characters and core items appearing in the script based on the provided script content.
+
+	Requirements:
+	1. Extract all characters with names (ignore unnamed passersby or background characters) and key props important to the plot
+	2. For each character, extract:
+	   - name: Character name
+	   - role: Character role (main/supporting/minor)
+	   - appearance: Physical appearance description following **five-module structure** (150-300 words)
+	   - personality: Personality traits (100-200 words)
+	   - description: Background story and character relationships (100-200 words). Must be consistent with the script.
+	   - age: Age range (string)
+	   - gender: Gender (string: male/female/other)
+	3. For each key prop, extract:
+	   - name: Prop name
+	   - role: "item"
+	   - appearance: Prop appearance description following **five-module structure** (100-200 words)
+	   - personality: ""
+	   - description: Role in the story and significance
+	   - age: ""
+   - gender: "other"
+
+	### 1.1 Appearance Description Specification (Five-module Structure)
+
+	The "appearance" field for each character/item must follow the **five-module structure**:
+
+appearance =  Basic Appearance + Clothing Details + Iconic Features + Temperament Status
+
+#### **Module Details**:
+
+**a) Style Prefix (must start with)**
+- Character format: "%s, full body portrait, white background."
+  - **Must explicitly state**: "full body portrait" (full body image)
+  - **Must explicitly state**: "white background" (white background)
+- Item format: "%s, product shot, whole object visible, white background."
+  - **Must explicitly state**: "product shot, whole object visible" (product image, complete visible)
+  - **Must explicitly state**: "white background" (white background)
+
+**b) Basic Appearance** (characters only)
+- Gender and age range: "A 25-year-old Asian woman"
+- Hairstyle and hair color: "with shoulder-length black straight hair, slightly messy"
+- Facial features (structural, not expressive): "deep-set eyes, thin lips, high cheekbones"
+- Body type: "slender and tall figure"
+
+**c) Clothing Details**
+- Clothing type and style: "wearing a worn dark blue linen robe"
+- Color and material: "rough fabric texture with visible patches"
+- Clothing condition: "frayed sleeves and hem, several crude repairs"
+- Accessories (wearable): "a worn leather belt around the waist"
+
+**d) Item Features** (items only)
+- Appearance details: shape, material, color, texture
+- Inscriptions/marks: **Keep Chinese original text**, e.g., "inscription '受命于天，既寿永昌' on its bottom"
+- Symbolic elements: "dragon knob on top"
+- **Size Reference**: **Must include**.
+  - Describe the physical size of the item relative to the human body.
+  - Examples: "palm-sized object", "heavy two-handed object", "human-height statue".
+
+**e) Temperament Status**
+- Overall aura (stable traits, not expressive): "exuding a weathered and aloof aura"
+- ❌ Prohibited: "smiling", "frowning", "sad expression" (these are described in the storyboard)
+
+### 1.2 Strictly Prohibited Elements
+
+**Absolutely cannot appear** in "appearance":
+- ❌ Environment/background (streets, rooms, sky, buildings, natural landscapes)
+- ❌ Lighting/weather (sunlight, shadows, moonlight, rain, snow, fog)
+- ❌ Handheld props (weapons, tools, books, any handheld objects)
+- ❌ Other characters
+- ❌ Actions/behavior (walking, running, fighting, etc.)
+- ❌ Expressions/emotions/eye contact (smiling, frowning, gentle eyes, sad face, etc.)
+
+**Important Note**:
+- **Background Requirement**: All character and item reference images must use a **pure white background** ("white background") to ensure consistency when characters are integrated into storyboards later.
+- **Full Body Requirement**: Characters must explicitly state "full body portrait" (full body image) to ensure the complete character appearance is displayed.
+- **Reason**: Expressions and actions will change according to the plot in subsequent storyboard scripts.
+
+### 1.3 Word Count and Quality Control
+- English Appearance Length: **50-100 words**
+- Include at least **2-3** strong visual recognition points
+- All features should be **relatively stable and not easily changed**
+- **Concise sentence structure**: Only retain subject, core appearance words, clothing words, and temperament words
+- ❌ Strictly prohibit long and complex sentences, and avoid useless sentence structures such as "A character showing...", "There is a..."
+
+---
+
+## Quality Check List
+
+### Characters Check:
+- [ ] Extract all characters with names
+- [ ] For each character, include all required fields
+- [ ] "image_prompt" starts with a style prefix (full body portrait / product shot)
+- [ ] **Characters must explicitly state** "full body portrait" (full body image)
+- [ ] **Must include** "white background" (white background)
+- [ ] **Must include** "size_reference" (size reference description)
+- [ ] No other background/environment/lighting descriptions (except white background)
+- [ ] No expression/emotion/eye contact descriptions
+- [ ] Contains 2-3 visual recognition points
+- [ ] Chinese inscriptions retain original text
+- [ ] Word count between 50-100 words
+
+---
+
+[Output Format]
+**CRITICAL: Return ONLY a valid JSON array. Do NOT include any markdown code blocks, explanations, or other text. Start directly with [ and end with ].**
+Each element is a character object containing: name, role, appearance, personality, description, age (string), gender (string: male/female/other).
+- [ ] No other background/environment/lighting descriptions (except white background)
+- [ ] No expression/emotion/eye contact descriptions
+- [ ] Contains 2-3 visual recognition points
+- [ ] Chinese inscriptions retain original text
+- [ ] Word count between 50-100 words
+
+---
+
+[Output Format]
+Please organize and return all work results strictly according to the following JSON structure. Except for this JSON object, do not include any additional explanations, introductions, or summaries.
+
+{
+  "characters": [
+    {
+      "name": "Imperial Jade Seal",
+      "role": "item",
+      "appearance": "{{ $('Profiler').first().json.story_artistic_style }}, product shot, whole object visible, white background. [Item Features]. [Temperament Status].",
+      "personality": "",
+      "description": "Brief Chinese appearance description",
+      "age": "",
+      "gender": "other"
+    },
+    {
+      "name": "Fisherman",
+      "role": "main",
+      "appearance": "{{ $('Profiler').first().json.story_artistic_style }}, full body portrait, white background. [Basic Appearance]. [Clothing Details]. [Temperament Status].",
+      "personality": "Weathered and wise",
+      "description": "Brief Chinese appearance description",
+      "age": "middle-aged",
+      "gender": "male"
+    }
+  ]
+}`, style, imageRatio)
+	}
+
+	return fmt.Sprintf(`你是一位经验丰富的创意总监和AI视频制作人。你的任务是根据提供的剧本内容，提取并整理剧中出现的所有角色和核心道具的详细设定。
+
+要求：
+1. 提取所有有名字的角色（忽略无名路人或背景角色）和对剧情发展有重要作用的核心道具
+2. 对每个角色，提取以下信息：
+   - name: 角色名字
+   - role: 角色类型（main/supporting/minor）
+   - appearance: 外貌描述，遵循**五大模块结构**（150-300字）
+   - personality: 性格特点（100-200字）
+   - description: 背景故事与角色关系（100-200字），须与剧本一致
+   - age: 年龄范围（字符串）
+   - gender: 性别（字符串：男/女/其他）
+3. 对每个核心道具，提取以下信息：
+   - name: 道具名称
+   - role: "item"
+   - appearance: 道具外观描述，遵循**五大模块结构**（100-200字）
+   - personality: ""
+   - description: 在剧中的作用和意义
+   - age: ""
+   - gender: "other"
+
+### 1.1 外貌描述规范（五大模块结构）
+
+每个角色/物品的 "appearance" 字段必须遵循**五大模块结构**：
+
+appearance = 风格前缀 + 基础外观 + 服饰细节 + 标志性特征 + 气质状态
+
+#### **模块详解**：
+
+**a) 风格前缀（必须开头）**
+- 角色格式："%s, full body portrait, white background."
+  - **必须明确说明**："full body portrait"（全身形象）
+  - **必须明确说明**："white background"（白色背景）
+- 物品格式："%s, product shot, whole object visible, white background."
+  - **必须明确说明**："product shot, whole object visible"（产品图，完整可见）
+  - **必须明确说明**："white background"（白色背景）
+
+**b) 基础外观**（仅角色）
+- 性别与年龄段："A 25-year-old Asian woman"
+- 发型与发色："with shoulder-length black straight hair, slightly messy"
+- 五官特点（结构性，非表情）："deep-set eyes, thin lips, high cheekbones"
+- 体型身材："slender and tall figure"
+
+**c) 服饰细节**
+- 服装类型与风格："wearing a worn dark blue linen robe"
+- 颜色与材质："rough fabric texture with visible patches"
+- 服装状态："frayed sleeves and hem, several crude repairs"
+- 配饰（穿戴类）："a worn leather belt around the waist"
+
+**d) 物品特征**（仅物品）
+- 外观细节：形状、材质、颜色、纹理
+- 铭文/标记：**保留中文原文**，如 "inscription '受命于天，既寿永昌' on its bottom"
+- 象征元素："dragon knob on top"
+- **尺寸参照 (Size Reference)**：**必须包含**。
+  - 描述该物品相对于人体的物理尺寸。
+  - 示例："palm-sized object", "heavy two-handed object", "human-height statue".
+
+**e) 气质状态**
+- 整体气场（稳定特质，非表情）："exuding a weathered and aloof aura"
+- ❌ 禁止："smiling", "frowning", "sad expression"（这些在分镜中描述）
+
+### 1.2 严格禁止的元素
+
+在 "appearance" 中**绝对不能出现**：
+- ❌ 环境/背景（街道、房间、天空、建筑、自然景观）
+- ❌ 光线/天气（阳光、阴影、月光、雨雪、雾气）
+- ❌ 手持道具（武器、工具、书籍、任何手持物）
+- ❌ 其他角色
+- ❌ 动作/行为（走路、奔跑、战斗等）
+- ❌ 表情/情绪/眼神（微笑、皱眉、眼神温柔、面露悲伤等）
+
+**重要说明**：
+- **背景要求**：所有角色和物品的参考图必须使用**纯白色背景**（"white background"），这是为了确保后续分镜中角色融合的一致性。
+- **全身形象要求**：角色必须明确说明 "full body portrait"（全身形象），确保完整展现角色外观。
+- **原因**：表情和动作会在后续分镜脚本中根据情节变化。
+
+### 1.3 字数与质量控制
+- 英文 Appearance 长度：**50-100词**
+- 至少包含 **2-3个** 强烈的视觉识别点
+- 所有特征应是**相对稳定、不易变化**的
+- **句式精简**：仅保留主语、核心外观词、服饰词、气质词
+- ❌ 严禁使用长难句，严禁使用 "A character showing...", "There is a..." 等废话句式
+
+---
+
+## 质量检查清单
+
+### Characters 检查：
+- [ ] 提取所有有名字的角色
+- [ ] 对每个角色，包含所有必填字段
+- [ ] "image_prompt" 以风格前缀开头（full body portrait / product shot）
+- [ ] **角色必须明确说明** "full body portrait"（全身形象）
+- [ ] **必须包含** "white background"（白色背景）
+- [ ] **必须包含** "size_reference"（尺寸参照描述）
+- [ ] 无其他背景/环境/光线描述（除白色背景外）
+- [ ] 无表情/情绪/眼神描述
+- [ ] 包含 2-3 个视觉识别点
+- [ ] 中文铭文保留原文
+- [ ] 字数在 50-100 词之间
+
+---
+
+[输出格式]
+**重要：必须只返回纯JSON数组，不要包含任何markdown代码块、说明文字或其他内容。直接以 [ 开头，以 ] 结尾。**
+每个元素是一个角色对象，必须包含字段：name, role, appearance, personality, description, age（字符串）, gender（字符串：男/女/其他）。
+- [ ] 无其他背景/环境/光线描述（除白色背景外）
+- [ ] 无表情/情绪/眼神描述
+- [ ] 包含 2-3 个视觉识别点
+- [ ] 中文铭文保留原文
+- [ ] 字数在 50-100 词之间
+
+---
+
+[输出格式]
+请将所有工作成果，严格按照下面的JSON结构组织和返回。除了这个JSON对象，不要有任何额外的解释、介绍或总结。
+
+{
+  "characters": [
+    {
+      "name": "传国玉玺",
+      "role": "item",
+      "appearance": "{{ $('Profiler').first().json.story_artistic_style }}, product shot, whole object visible, white background. [物品特征]. [气质状态].",
+      "personality": "",
+      "description": "简短的中文外观描述",
+      "age": "",
+      "gender": "other"
+    },
+    {
+      "name": "渔夫",
+      "role": "main",
+      "appearance": "{{ $('Profiler').first().json.story_artistic_style }}, full body portrait, white background. [基础外观]. [服饰细节]. [气质状态].",
+      "personality": "饱经风霜且充满智慧",
+      "description": "简短的中文外观描述",
+      "age": "middle-aged",
+      "gender": "male"
+    }
+  ]
+}`, style, imageRatio)
 }
 
 // GetPropExtractionPrompt 获取道具提取提示词

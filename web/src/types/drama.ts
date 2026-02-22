@@ -7,6 +7,7 @@ export interface Drama {
   description?: string
   genre?: string
   style?: string
+  aspect_ratio?: string
   total_episodes: number
   total_duration: number
   total_scenes?: number
@@ -30,6 +31,8 @@ export interface Character {
   drama_id: string
   name: string
   role?: string
+  age?: string
+  gender?: string
   description?: string
   appearance?: string
   personality?: string
@@ -131,6 +134,7 @@ export interface UpdateDramaRequest {
   style?: string
   tags?: string
   status?: DramaStatus
+  aspect_ratio?: string
 }
 
 export interface DramaListQuery {

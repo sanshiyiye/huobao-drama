@@ -42,6 +42,7 @@ type UpdateDramaRequest struct {
 	Style       string `json:"style"`
 	Tags        string `json:"tags"`
 	Status      string `json:"status" binding:"omitempty,oneof=draft planning production completed archived"`
+	AspectRatio string `json:"aspect_ratio" binding:"omitempty,oneof=16:9 9:16 1:1"`
 }
 
 type DramaListQuery struct {
@@ -54,9 +55,10 @@ type DramaListQuery struct {
 
 func (s *DramaService) CreateDrama(req *CreateDramaRequest) (*models.Drama, error) {
 	drama := &models.Drama{
-		Title:  req.Title,
-		Status: "draft",
-		Style:  "ghibli", // 默认风格
+		Title:       req.Title,
+		Status:      "draft",
+		Style:       "ghibli",       // 默认风格
+		AspectRatio: "16:9",         // 默认宽高比
 	}
 
 	if req.Description != "" {
@@ -285,6 +287,9 @@ func (s *DramaService) UpdateDrama(dramaID string, req *UpdateDramaRequest) (*mo
 	if req.Status != "" {
 		updates["status"] = req.Status
 	}
+	if req.AspectRatio != "" {
+		updates["aspect_ratio"] = req.AspectRatio
+	}
 
 	updates["updated_at"] = time.Now()
 
@@ -505,6 +510,8 @@ func (s *DramaService) SaveCharacters(dramaID string, req *SaveCharactersRequest
 				updates := map[string]interface{}{
 					"name":        char.Name,
 					"role":        char.Role,
+					"age":         char.Age,
+					"gender":      char.Gender,
 					"description": char.Description,
 					"personality": char.Personality,
 					"appearance":  char.Appearance,
@@ -530,6 +537,8 @@ func (s *DramaService) SaveCharacters(dramaID string, req *SaveCharactersRequest
 			DramaID:     dramaIDUint,
 			Name:        char.Name,
 			Role:        char.Role,
+			Age:         char.Age,
+			Gender:      char.Gender,
 			Description: char.Description,
 			Personality: char.Personality,
 			Appearance:  char.Appearance,

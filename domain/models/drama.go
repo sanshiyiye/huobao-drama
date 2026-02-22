@@ -13,6 +13,7 @@ type Drama struct {
 	Description   *string        `gorm:"type:text" json:"description"`
 	Genre         *string        `gorm:"type:varchar(50)" json:"genre"`
 	Style         string         `gorm:"type:varchar(50);default:'realistic'" json:"style"`
+	AspectRatio   string         `gorm:"type:varchar(10);default:'16:9'" json:"aspect_ratio"`
 	TotalEpisodes int            `gorm:"default:1" json:"total_episodes"`
 	TotalDuration int            `gorm:"default:0" json:"total_duration"`
 	Status        string         `gorm:"type:varchar(20);default:'draft';not null" json:"status"`
@@ -38,6 +39,8 @@ type Character struct {
 	DramaID         uint           `gorm:"not null;index" json:"drama_id"`
 	Name            string         `gorm:"type:varchar(100);not null" json:"name"`
 	Role            *string        `gorm:"type:varchar(50)" json:"role"`
+	Age             *string        `gorm:"type:varchar(20)" json:"age"`
+	Gender          *string        `gorm:"type:varchar(10)" json:"gender"`
 	Description     *string        `gorm:"type:text" json:"description"`
 	Appearance      *string        `gorm:"type:text" json:"appearance"`
 	Personality     *string        `gorm:"type:text" json:"personality"`

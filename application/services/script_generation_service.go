@@ -2,7 +2,9 @@ package services
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/drama-generator/backend/domain/models"
 	"github.com/drama-generator/backend/pkg/ai"
@@ -79,7 +81,7 @@ func (s *ScriptGenerationService) processCharacterGeneration(taskID string, req 
 		return
 	}
 
-	systemPrompt := s.promptI18n.GetCharacterExtractionPrompt(drama.Style)
+	systemPrompt := s.promptI18n.GetCharacterExtractionPromptTest(drama.Style)
 
 	outlineText := req.Outline
 	if outlineText == "" {
@@ -117,21 +119,70 @@ func (s *ScriptGenerationService) processCharacterGeneration(taskID string, req 
 
 	s.log.Infow("AI response received for character generation", "length", len(text), "preview", text[:minInt(200, len(text))], "task_id", taskID)
 
-	// AI直接返回数组格式
+	// AI 返回的格式可能是对象包含 characters 字段或者直接是数组
 	var result []struct {
 		Name        string `json:"name"`
 		Role        string `json:"role"`
+		Age         string `json:"age"`
+		Gender      string `json:"gender"`
 		Description string `json:"description"`
 		Personality string `json:"personality"`
 		Appearance  string `json:"appearance"`
 		VoiceStyle  string `json:"voice_style"`
 	}
 
-	if err := utils.SafeParseAIJSON(text, &result); err != nil {
-		s.log.Errorw("Failed to parse characters JSON", "error", err, "raw_response", text[:minInt(500, len(text))], "task_id", taskID)
-		s.taskService.UpdateTaskStatus(taskID, "failed", 0, "解析AI返回结果失败")
-		return
+	// 首先尝试解析为对象包含 characters 字段的格式
+	var response struct {
+		Characters []struct {
+			Name        string `json:"name"`
+			Role        string `json:"role"`
+			Age         string `json:"age"`
+			Gender      string `json:"gender"`
+			Description string `json:"description"`
+			Personality string `json:"personality"`
+			Appearance  string `json:"appearance"`
+			VoiceStyle  string `json:"voice_style"`
+		} `json:"characters"`
 	}
+
+	if err := utils.SafeParseAIJSON(text, &response); err == nil && len(response.Characters) > 0 {
+		result = response.Characters
+	} else {
+		// 如果解析失败，尝试直接解析为数组格式
+		if err := utils.SafeParseAIJSON(text, &result); err != nil {
+			s.log.Errorw("Failed to parse characters JSON", "error", err, "raw_response", text[:minInt(500, len(text))], "task_id", taskID)
+			s.taskService.UpdateTaskStatus(taskID, "failed", 0, "解析AI返回结果失败")
+			return
+		}
+	}
+
+	// 后处理：从 appearance 字段中去除年龄和性别信息
+	// 这样无论AI如何生成，我们都能确保 appearance 字段是纯净的
+	for i := range result {
+		// 去除年龄信息
+		agePatterns := []string{
+			"婴儿", "幼儿", "儿童", "青少年", "青年", "成年", "中年", "年长者", "老年",
+			"infant", "toddler", "child", "teenager", "youth", "adult", "middle-aged", "elderly", "senior",
+		}
+		for _, pattern := range agePatterns {
+			result[i].Appearance = strings.ReplaceAll(result[i].Appearance, pattern, "")
+		}
+
+		// 去除性别信息
+		genderPatterns := []string{
+			"男", "女", "其他",
+			"male", "female", "other",
+		}
+		for _, pattern := range genderPatterns {
+			result[i].Appearance = strings.ReplaceAll(result[i].Appearance, pattern, "")
+		}
+
+		// 去除可能残留的标点符号和多余空格
+		result[i].Appearance = regexp.MustCompile(`\s+`).ReplaceAllString(strings.TrimSpace(result[i].Appearance), " ")
+	}
+
+	// 调试日志：打印解析后的角色数据
+	s.log.Infow("Extracted characters from AI", "characters", result, "task_id", taskID)
 
 	var characters []models.Character
 	for _, char := range result {
@@ -139,8 +190,17 @@ func (s *ScriptGenerationService) processCharacterGeneration(taskID string, req 
 		var existingChar models.Character
 		err := s.db.Where("drama_id = ? AND name = ?", req.DramaID, char.Name).First(&existingChar).Error
 		if err == nil {
-			// 角色已存在，直接使用已存在的角色，不覆盖
-			s.log.Infow("Character already exists, skipping", "drama_id", req.DramaID, "name", char.Name, "task_id", taskID)
+			// 角色已存在，更新 age 和 gender 字段（如果 AI 返回了这些数据）
+			s.log.Infow("Character already exists, updating age and gender", "drama_id", req.DramaID, "name", char.Name, "task_id", taskID)
+			if char.Age != "" {
+				existingChar.Age = &char.Age
+			}
+			if char.Gender != "" {
+				existingChar.Gender = &char.Gender
+			}
+			if err := s.db.Save(&existingChar).Error; err != nil {
+				s.log.Errorw("Failed to update character age and gender", "error", err, "task_id", taskID, "character_id", existingChar.ID)
+			}
 			characters = append(characters, existingChar)
 			continue
 		}
@@ -151,6 +211,8 @@ func (s *ScriptGenerationService) processCharacterGeneration(taskID string, req 
 			DramaID:     uint(dramaID),
 			Name:        char.Name,
 			Role:        &char.Role,
+			Age:         &char.Age,
+			Gender:      &char.Gender,
 			Description: &char.Description,
 			Personality: &char.Personality,
 			Appearance:  &char.Appearance,

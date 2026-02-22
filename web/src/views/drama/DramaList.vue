@@ -109,31 +109,31 @@
             />
           </el-form-item>
           <el-form-item :label="$t('drama.style')" required>
-            <el-select
-              v-model="editForm.style"
-              :placeholder="$t('drama.stylePlaceholder')"
-              size="large"
-              style="width: 100%"
-            >
-              <el-option :label="$t('drama.styles.ghibli')" value="ghibli" />
-              <el-option :label="$t('drama.styles.guoman')" value="guoman" />
-              <el-option
-                :label="$t('drama.styles.wasteland')"
-                value="wasteland"
-              />
-              <el-option
-                :label="$t('drama.styles.nostalgia')"
-                value="nostalgia"
-              />
-              <el-option :label="$t('drama.styles.pixel')" value="pixel" />
-              <el-option :label="$t('drama.styles.voxel')" value="voxel" />
-              <el-option :label="$t('drama.styles.urban')" value="urban" />
-              <el-option
-                :label="$t('drama.styles.guoman3d')"
-                value="guoman3d"
-              />
-              <el-option :label="$t('drama.styles.chibi3d')" value="chibi3d" />
-            </el-select>
+            <div class="style-selector">
+              <div class="style-presets">
+                <button
+                  v-for="item in stylePresets"
+                  :key="item.value"
+                  type="button"
+                  class="style-preset-btn"
+                  :class="{ active: editForm.style === item.value }"
+                  @click="editForm.style = item.value"
+                >
+                  {{ $t(item.labelKey) }}
+                </button>
+              </div>
+              <div class="style-custom">
+                <el-input
+                  :model-value="editCustomStyleInput"
+                  :placeholder="$t('drama.styleCustomPlaceholder')"
+                  size="default"
+                  clearable
+                  maxlength="50"
+                  show-word-limit
+                  @update:model-value="onEditCustomStyleInput"
+                />
+              </div>
+            </div>
           </el-form-item>
         </el-form>
         <template #footer>
@@ -197,9 +197,33 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
+
+const PRESET_STYLE_VALUES = [
+  "ghibli",
+  "guoman",
+  "wasteland",
+  "nostalgia",
+  "pixel",
+  "voxel",
+  "urban",
+  "guoman3d",
+  "chibi3d",
+];
+
+const stylePresets = [
+  { value: "ghibli", labelKey: "drama.styles.ghibli" },
+  { value: "guoman", labelKey: "drama.styles.guoman" },
+  { value: "wasteland", labelKey: "drama.styles.wasteland" },
+  { value: "nostalgia", labelKey: "drama.styles.nostalgia" },
+  { value: "pixel", labelKey: "drama.styles.pixel" },
+  { value: "voxel", labelKey: "drama.styles.voxel" },
+  { value: "urban", labelKey: "drama.styles.urban" },
+  { value: "guoman3d", labelKey: "drama.styles.guoman3d" },
+  { value: "chibi3d", labelKey: "drama.styles.chibi3d" },
+];
 import {
   Plus,
   Film,
@@ -259,6 +283,19 @@ const editForm = ref({
   description: "",
   style: "ghibli",
 });
+
+const editCustomStyleInput = computed({
+  get() {
+    return PRESET_STYLE_VALUES.includes(editForm.value.style) ? "" : editForm.value.style;
+  },
+  set(v: string) {
+    editForm.value.style = v || "ghibli";
+  },
+});
+
+function onEditCustomStyleInput(value: string) {
+  editForm.value.style = value?.trim() || "ghibli";
+}
 
 // Open edit dialog / 打开编辑对话框
 const editDrama = async (id: string) => {
@@ -557,6 +594,45 @@ onMounted(() => {
   font-weight: 500;
   color: var(--text-primary);
   margin-bottom: 0.5rem;
+}
+
+.style-selector {
+  width: 100%;
+}
+
+.style-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.style-preset-btn {
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.style-preset-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.style-preset-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.style-custom :deep(.el-input__wrapper) {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 1px var(--border-primary) inset;
 }
 
 .dialog-footer {

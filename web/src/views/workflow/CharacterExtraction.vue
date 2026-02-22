@@ -41,6 +41,8 @@
               <p><strong>{{ $t('character.personality') }}：</strong>{{ character.personality }}</p>
               <p><strong>{{ $t('character.appearance') }}：</strong>{{ character.appearance }}</p>
               <p><strong>{{ $t('character.background') }}：</strong>{{ character.background }}</p>
+              <p><strong>{{ $t('character.age') }}：</strong>{{ character.age }}</p>
+              <p><strong>{{ $t('character.gender') }}：</strong>{{ character.gender }}</p>
             </div>
 
             <template #footer>
@@ -70,6 +72,12 @@
         </el-form-item>
         <el-form-item label="角色">
           <el-input v-model="editForm.role" />
+        </el-form-item>
+        <el-form-item label="年龄">
+          <el-input v-model="editForm.age" />
+        </el-form-item>
+        <el-form-item label="性别">
+          <el-input v-model="editForm.gender" />
         </el-form-item>
         <el-form-item label="性格">
           <el-input v-model="editForm.personality" type="textarea" :rows="3" />
@@ -105,6 +113,8 @@ const editDialogVisible = ref(false)
 const editForm = reactive({
   name: '',
   role: '',
+  age: '',
+  gender: '',
   personality: '',
   appearance: '',
   background: ''
@@ -118,6 +128,8 @@ const addCharacter = () => {
   Object.assign(editForm, {
     name: '',
     role: '',
+    age: '',
+    gender: '',
     personality: '',
     appearance: '',
     background: ''

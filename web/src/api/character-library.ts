@@ -95,6 +95,8 @@ export const characterLibraryAPI = {
   // 更新角色信息
   updateCharacter(characterId: number, data: {
     name?: string
+    age?: string
+    gender?: string
     appearance?: string
     personality?: string
     description?: string

@@ -157,16 +157,20 @@ func (s *ImageGenerationService) GenerateImage(request *GenerateImageRequest) (*
 
 func (s *ImageGenerationService) ProcessImageGeneration(imageGenID uint) {
 	var imageGen models.ImageGeneration
-	imageRatio := "16:9"
 	if err := s.db.First(&imageGen, imageGenID).Error; err != nil {
 		s.log.Errorw("Failed to load image generation", "error", err, "id", imageGenID)
 		return
 	}
 
-	// 获取drama的style信息
+	// 获取drama的style和aspect_ratio信息
 	var drama models.Drama
+	imageRatio := "16:9" // 默认值
 	if err := s.db.First(&drama, imageGen.DramaID).Error; err != nil {
 		s.log.Warnw("Failed to load drama for style", "error", err, "drama_id", imageGen.DramaID)
+	} else {
+		if drama.AspectRatio != "" {
+			imageRatio = drama.AspectRatio
+		}
 	}
 
 	s.db.Model(&imageGen).Update("status", models.ImageStatusProcessing)

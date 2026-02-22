@@ -138,7 +138,7 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 %s
 %s
 
-%s%s
+%s
 
 %s
 %s
@@ -318,7 +318,7 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 - 包含感官细节：视觉、听觉、触觉、嗅觉
 - 描述光线、色彩、质感、动态
 - 为视频生成AI提供足够的画面构建信息
-- 避免抽象词汇，使用具象的视觉化描述`, systemPrompt, scriptLabel, scriptContent, taskLabel, taskInstruction, charListLabel, characterList, charConstraint, sceneListLabel, sceneList, sceneConstraint)
+- 避免抽象词汇，使用具象的视觉化描述`, systemPrompt, scriptLabel, taskLabel, taskInstruction, charListLabel, characterList, charConstraint, sceneListLabel, sceneList, sceneConstraint, scriptContent)
 
 	// 创建异步任务
 	task, err := s.taskService.CreateTask("storyboard_generation", episodeID)

@@ -804,32 +804,42 @@
               resize="none"
             />
           </el-form-item>
-          <el-form-item :label="$t('drama.style')" required>
+          <el-form-item :label="$t('drama.videoAspectRatio')" required>
             <el-select
-              v-model="editProjectForm.style"
-              :placeholder="$t('drama.stylePlaceholder')"
+              v-model="editProjectForm.aspect_ratio"
+              :placeholder="$t('drama.selectAspectRatio')"
               size="large"
-              style="width: 100%"
             >
-              <el-option :label="$t('drama.styles.ghibli')" value="ghibli" />
-              <el-option :label="$t('drama.styles.guoman')" value="guoman" />
-              <el-option
-                :label="$t('drama.styles.wasteland')"
-                value="wasteland"
-              />
-              <el-option
-                :label="$t('drama.styles.nostalgia')"
-                value="nostalgia"
-              />
-              <el-option :label="$t('drama.styles.pixel')" value="pixel" />
-              <el-option :label="$t('drama.styles.voxel')" value="voxel" />
-              <el-option :label="$t('drama.styles.urban')" value="urban" />
-              <el-option
-                :label="$t('drama.styles.guoman3d')"
-                value="guoman3d"
-              />
-              <el-option :label="$t('drama.styles.chibi3d')" value="chibi3d" />
+              <el-option label="16:9 (横屏)" value="16:9" />
+              <el-option label="9:16 (竖屏)" value="9:16" />
+              <el-option label="1:1 (方形)" value="1:1" />
             </el-select>
+          </el-form-item>
+          <el-form-item :label="$t('drama.style')" required>
+            <div class="style-selector">
+              <div class="style-presets">
+                <button
+                  v-for="item in stylePresets"
+                  :key="item.value"
+                  type="button"
+                  class="style-preset-btn"
+                  :class="{ active: editProjectForm.style === item.value }"
+                  @click="selectStyle(item.value)"
+                >
+                  {{ $t(item.labelKey) }}
+                </button>
+              </div>
+              <div class="style-custom">
+                <el-input
+                  v-model="editProjectForm.style"
+                  :placeholder="$t('drama.styleCustomPlaceholder')"
+                  size="default"
+                  clearable
+                  maxlength="50"
+                  show-word-limit
+                />
+              </div>
+            </div>
           </el-form-item>
         </el-form>
         <template #footer>
@@ -898,6 +908,45 @@ const editingScene = ref<any>(null);
 const editingProp = ref<any>(null);
 const selectedExtractEpisodeId = ref<number | null>(null);
 
+const PRESET_STYLE_VALUES = [
+  "ghibli",
+  "guoman",
+  "wasteland",
+  "nostalgia",
+  "pixel",
+  "voxel",
+  "urban",
+  "guoman3d",
+  "chibi3d",
+];
+
+const stylePresets = [
+  { value: "ghibli", labelKey: "drama.styles.ghibli" },
+  { value: "guoman", labelKey: "drama.styles.guoman" },
+  { value: "wasteland", labelKey: "drama.styles.wasteland" },
+  { value: "nostalgia", labelKey: "drama.styles.nostalgia" },
+  { value: "pixel", labelKey: "drama.styles.pixel" },
+  { value: "voxel", labelKey: "drama.styles.voxel" },
+  { value: "urban", labelKey: "drama.styles.urban" },
+  { value: "guoman3d", labelKey: "drama.styles.guoman3d" },
+  { value: "chibi3d", labelKey: "drama.styles.chibi3d" },
+];
+
+const editProjectCustomStyleInput = computed({
+  get() {
+    return PRESET_STYLE_VALUES.includes(editProjectForm.value.style)
+      ? ""
+      : editProjectForm.value.style;
+  },
+  set(v: string) {
+    editProjectForm.value.style = v || "ghibli";
+  },
+});
+
+function onEditProjectCustomStyleInput(value: string) {
+  editProjectForm.value.style = value?.trim() || "ghibli";
+}
+
 // 编辑项目弹框（与项目列表页一致）
 const editProjectDialogVisible = ref(false);
 const editProjectLoading = ref(false);
@@ -906,6 +955,7 @@ const editProjectForm = ref({
   title: "",
   description: "",
   style: "ghibli",
+  aspect_ratio: "16:9",
 });
 
 const newCharacter = ref({
@@ -1025,6 +1075,11 @@ const formatDate = (date?: string) => {
   return new Date(date).toLocaleString("zh-CN");
 };
 
+// 选择风格
+const selectStyle = (styleValue: string) => {
+  editProjectForm.value.style = styleValue;
+};
+
 // 打开编辑项目弹框（与项目列表页一致）
 const openEditProjectDialog = () => {
   if (!drama.value) return;
@@ -1033,6 +1088,7 @@ const openEditProjectDialog = () => {
     title: drama.value.title,
     description: drama.value.description || "",
     style: drama.value.style || "ghibli",
+    aspect_ratio: drama.value.aspect_ratio || "16:9",
   };
   editProjectDialogVisible.value = true;
 };
@@ -1049,6 +1105,7 @@ const saveEditProject = async () => {
       title: editProjectForm.value.title,
       description: editProjectForm.value.description,
       style: editProjectForm.value.style,
+      aspect_ratio: editProjectForm.value.aspect_ratio,
     });
     ElMessage.success("保存成功");
     editProjectDialogVisible.value = false;
@@ -1858,6 +1915,45 @@ onMounted(() => {
 }
 .project-edit-btn:hover {
   color: var(--accent);
+}
+
+.style-selector {
+  width: 100%;
+}
+
+.style-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.style-preset-btn {
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.style-preset-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.style-preset-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.style-custom :deep(.el-input__wrapper) {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 1px var(--border-primary) inset;
 }
 
 .card-title {
