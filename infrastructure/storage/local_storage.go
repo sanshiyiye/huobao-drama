@@ -77,7 +77,8 @@ func (s *LocalStorage) DownloadFromURL(url, category string) (string, error) {
 }
 
 // DownloadFromURLWithPath 从远程URL下载文件到本地存储，返回详细信息
-func (s *LocalStorage) DownloadFromURLWithPath(url, category string) (*DownloadResult, error) {
+// filename 参数可选，指定保存时的文件名（不含扩展名）
+func (s *LocalStorage) DownloadFromURLWithPath(url, category string, filename ...string) (*DownloadResult, error) {
 	// CRITICAL FIX: Add HTTP client with timeout to prevent hanging indefinitely
 	// Without timeout, the download can hang forever if the remote server is unresponsive
 	// 5 minute timeout is reasonable for large video/image files
@@ -104,11 +105,18 @@ func (s *LocalStorage) DownloadFromURLWithPath(url, category string) (*DownloadR
 		return nil, fmt.Errorf("failed to create category directory: %w", err)
 	}
 
-	// 生成唯一文件名（时间戳 + UUID 前8位）
-	timestamp := time.Now().Format("20060102_150405")
-	uniqueID := uuid.New().String()[:8]
-	filename := fmt.Sprintf("%s_%s%s", timestamp, uniqueID, ext)
-	filePath := filepath.Join(dir, filename)
+	// 生成文件名
+	var filenameStr string
+	if len(filename) > 0 && filename[0] != "" {
+		// 使用指定的文件名
+		filenameStr = fmt.Sprintf("%s%s", filename[0], ext)
+	} else {
+		// 生成唯一文件名（时间戳 + UUID 前8位）
+		timestamp := time.Now().Format("20060102_150405")
+		uniqueID := uuid.New().String()[:8]
+		filenameStr = fmt.Sprintf("%s_%s%s", timestamp, uniqueID, ext)
+	}
+	filePath := filepath.Join(dir, filenameStr)
 
 	// 保存文件
 	dst, err := os.Create(filePath)
@@ -122,9 +130,9 @@ func (s *LocalStorage) DownloadFromURLWithPath(url, category string) (*DownloadR
 	}
 
 	// 返回详细信息
-	relativePath := filepath.Join(category, filename)
-	localURL := fmt.Sprintf("%s/%s/%s", s.baseURL, category, filename)
-	
+	relativePath := filepath.Join(category, filenameStr)
+	localURL := fmt.Sprintf("%s/%s/%s", s.baseURL, category, filenameStr)
+
 	return &DownloadResult{
 		URL:          localURL,
 		RelativePath: relativePath,

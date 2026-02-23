@@ -523,7 +523,8 @@ func (s *DramaService) SaveCharacters(dramaID string, req *SaveCharactersRequest
 					"description": char.Description,
 					"personality": char.Personality,
 					"appearance":  char.Appearance,
-					"image_url":   char.ImageURL,
+					"image_url":   nil, // 清除之前生成的图片URL
+					"local_path":  nil, // 清除本地图片路径
 				}
 				if err := s.db.Model(&existing).Updates(updates).Error; err != nil {
 					s.log.Errorw("Failed to update character", "error", err, "id", char.ID)
@@ -550,7 +551,8 @@ func (s *DramaService) SaveCharacters(dramaID string, req *SaveCharactersRequest
 			Description: char.Description,
 			Personality: char.Personality,
 			Appearance:  char.Appearance,
-			ImageURL:    char.ImageURL,
+			ImageURL:    nil, // 新角色默认没有图片
+			LocalPath:   nil, // 新角色默认没有本地图片路径
 		}
 
 		if err := s.db.Create(&character).Error; err != nil {
@@ -562,10 +564,16 @@ func (s *DramaService) SaveCharacters(dramaID string, req *SaveCharactersRequest
 		characterIDs = append(characterIDs, character.ID)
 	}
 
-	// 如果指定了EpisodeID，建立角色与章节的关联
+	// 如果指定了EpisodeID，先清除该章节之前关联的角色，再建立新的关联
 	if req.EpisodeID != nil && len(characterIDs) > 0 {
 		var episode models.Episode
 		if err := s.db.First(&episode, *req.EpisodeID).Error; err != nil {
+			return err
+		}
+
+		// 先清除章节与角色的关联
+		if err := s.db.Model(&episode).Association("Characters").Clear(); err != nil {
+			s.log.Errorw("Failed to clear existing character associations", "error", err)
 			return err
 		}
 
@@ -576,7 +584,7 @@ func (s *DramaService) SaveCharacters(dramaID string, req *SaveCharactersRequest
 			return err
 		}
 
-		// 使用GORM的Association API建立多对多关系（会自动去重）
+		// 建立新的关联
 		if err := s.db.Model(&episode).Association("Characters").Append(&characters); err != nil {
 			s.log.Errorw("Failed to associate characters with episode", "error", err)
 			return err

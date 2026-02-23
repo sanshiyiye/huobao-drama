@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	models "github.com/drama-generator/backend/domain/models"
@@ -703,6 +704,9 @@ func (s *CharacterLibraryService) processCharacterExtraction(taskID string, epis
 				"appearance":  charData.Appearance,
 				"personality": charData.Personality,
 				"description": charData.Description,
+				"image_ref":   fmt.Sprintf("character_%s", strings.ToLower(strings.ReplaceAll(charData.Name, " ", "_"))),
+				"image_url":   nil, // 清除之前生成的图片URL
+				"local_path":  nil, // 清除本地图片路径
 			}
 			if charData.Age != "" {
 				updates["age"] = charData.Age
@@ -723,6 +727,7 @@ func (s *CharacterLibraryService) processCharacterExtraction(taskID string, epis
 			newCharacter := models.Character{
 				DramaID:     episode.DramaID,
 				Name:        charData.Name,
+				ImageRef:    fmt.Sprintf("character_%s", strings.ToLower(strings.ReplaceAll(charData.Name, " ", "_"))),
 				Role:        &charData.Role,
 				Appearance:  &charData.Appearance,
 				Personality: &charData.Personality,

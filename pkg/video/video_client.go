@@ -146,7 +146,7 @@ func NewRunwayClient(baseURL, apiKey, model string) *RunwayClient {
 		APIKey:  apiKey,
 		Model:   model,
 		HTTPClient: &http.Client{
-			Timeout: 180 * time.Second,
+			Timeout: 900 * time.Second,
 		},
 	}
 }
@@ -301,7 +301,7 @@ func NewPikaClient(baseURL, apiKey, model string) *PikaClient {
 		APIKey:  apiKey,
 		Model:   model,
 		HTTPClient: &http.Client{
-			Timeout: 180 * time.Second,
+			Timeout: 900 * time.Second,
 		},
 	}
 }

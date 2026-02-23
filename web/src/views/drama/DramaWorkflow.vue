@@ -214,8 +214,8 @@
             </el-table>
 
             <div class="action-buttons" style="margin-top: 24px">
-              <el-button @click="regenerateShots" :icon="MagicStick">
-                {{ $t("dramaWorkflow.reGenerateShots") }}
+              <el-button @click="regenerateShots" :icon="MagicStick" :loading="generatingShots">
+                {{ generatingShots ? $t("dramaWorkflow.aiSplitting") : $t("dramaWorkflow.reGenerateShots") }}
               </el-button>
               <el-button
                 type="success"

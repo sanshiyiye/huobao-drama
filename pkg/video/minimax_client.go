@@ -106,7 +106,7 @@ func NewMinimaxClient(baseURL, apiKey, model string) *MinimaxClient {
 		APIKey:  apiKey,
 		Model:   model,
 		HTTPClient: &http.Client{
-			Timeout: 300 * time.Second,
+			Timeout: 900 * time.Second,
 		},
 	}
 }

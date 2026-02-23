@@ -303,6 +303,7 @@
                       <div class="header-left">
                         <h4>{{ char.name }}</h4>
                         <el-tag size="small">{{ char.role }}</el-tag>
+                        <el-tag v-if="char.image_ref" size="small" type="info">{{ char.image_ref }}</el-tag>
                       </div>
                       <el-button
                         type="danger"
@@ -496,6 +497,7 @@
                       <div class="header-left">
                         <h4>{{ scene.location }}</h4>
                         <el-tag size="small">{{ scene.time }}</el-tag>
+                        <el-tag v-if="scene.image_ref" size="small" type="info">{{ scene.image_ref }}</el-tag>
                       </div>
                       <el-button
                         type="danger"
@@ -819,8 +821,8 @@
             <el-icon><ArrowLeft /></el-icon>
             {{ $t("workflow.prevStep") }}
           </el-button>
-          <el-button size="large" @click="regenerateShots" :icon="MagicStick">
-            {{ $t("workflow.reSplitShots") }}
+          <el-button size="large" @click="regenerateShots" :icon="MagicStick" :loading="generatingShots">
+            {{ generatingShots ? $t("workflow.aiSplitting") : $t("workflow.reSplitShots") }}
           </el-button>
           <el-button type="success" size="large" @click="goToProfessionalUI">
             {{ $t("workflow.enterProfessional") }}
@@ -959,14 +961,6 @@
             />
           </el-form-item>
 
-          <el-form-item :label="$t('workflow.imagePrompt')">
-            <el-input
-              v-model="editingShot.image_prompt"
-              type="textarea"
-              :rows="3"
-              :placeholder="$t('workflow.imagePromptPlaceholder')"
-            />
-          </el-form-item>
 
           <el-form-item :label="$t('workflow.videoPrompt')">
             <el-input
@@ -975,6 +969,24 @@
               :rows="3"
               :placeholder="$t('workflow.videoPromptPlaceholder')"
             />
+          </el-form-item>
+
+          <el-form-item :label="$t('workflow.characters')">
+            <el-select
+              v-model="editingShot.characters"
+              multiple
+              filterable
+              allow-create
+              :placeholder="$t('workflow.selectCharacters')"
+              collapse-tags
+            >
+              <el-option
+                v-for="char in currentEpisode?.characters || []"
+                :key="char.id"
+                :label="char.name"
+                :value="char.id"
+              />
+            </el-select>
           </el-form-item>
 
           <el-row :gutter="16">
@@ -1535,7 +1547,7 @@ const handleExtractStyle = async () => {
     // 轮询任务状态
     let taskStatus = "processing";
     let attempts = 0;
-    const maxAttempts = 30; // 最多轮询 30 次（约 30 秒）
+    const maxAttempts = 300; // 最多轮询 300 次（约 5 分钟）
 
     while (taskStatus === "processing" && attempts < maxAttempts) {
       await new Promise(resolve => setTimeout(resolve, 1000)); // 每秒检查一次
@@ -2537,6 +2549,15 @@ const savingShot = ref(false);
 
 const editShot = (shot: any, index: number) => {
   editingShot.value = { ...shot };
+  // 确保characters字段是数组类型
+  if (!Array.isArray(editingShot.value.characters)) {
+    editingShot.value.characters = [];
+  } else {
+    // 将角色对象转换为角色ID数组
+    editingShot.value.characters = editingShot.value.characters.map((char: any) => {
+      return typeof char === 'object' ? char.id : char;
+    });
+  }
   editingShotIndex.value = index;
   shotEditDialogVisible.value = true;
 };

@@ -2049,7 +2049,7 @@ import {
 } from "@element-plus/icons-vue";
 import { dramaAPI } from "@/api/drama";
 import { propAPI } from "@/api/prop";
-import { generateFramePrompt, type FrameType } from "@/api/frame";
+import { generateFramePrompt, getStoryboardFramePrompts, type FrameType } from "@/api/frame";
 import { imageAPI } from "@/api/image";
 import { videoAPI } from "@/api/video";
 import { aiAPI } from "@/api/ai";
@@ -2114,6 +2114,7 @@ const framePrompts = ref<Record<string, string>>({
   first: "",
   last: "",
   panel: "",
+  action: "",
 });
 const currentFramePrompt = ref("");
 const generatingImage = ref(false);
@@ -2573,22 +2574,39 @@ watch(currentStoryboard, async (newStoryboard) => {
     first: "",
     last: "",
     panel: "",
+    action: "",
   };
 
-  // 加载当前帧类型的提示词
-  const storageKey = getPromptStorageKey(
-    newStoryboard.id,
-    selectedFrameType.value,
-  );
-  if (storageKey) {
-    const stored = sessionStorage.getItem(storageKey);
-    currentFramePrompt.value = stored || "";
-    // 同时更新 framePrompts 对象
-    if (stored) {
-      framePrompts.value[selectedFrameType.value] = stored;
+  // 从后端加载预生成的帧提示词
+  try {
+    const response = await getStoryboardFramePrompts(newStoryboard.id);
+    const framePromptsData = response.frame_prompts;
+
+    // 将加载到的提示词更新到 framePrompts 对象中
+    framePromptsData.forEach((promptData: any) => {
+      const frameType = promptData.frame_type;
+      console.log(`加载到 ${frameType} 类型提示词:`, promptData.prompt);
+      framePrompts.value[frameType] = promptData.prompt;
+    });
+
+    // 同时更新 sessionStorage 和当前显示的提示词
+    Object.keys(framePrompts.value).forEach((frameType) => {
+      const prompt = framePrompts.value[frameType];
+      if (prompt) {
+        const storageKey = `frame_prompt_${newStoryboard.id}_${frameType}`;
+        sessionStorage.setItem(storageKey, prompt);
+      }
+    });
+
+    // 直接设置当前帧类型的提示词（确保立即显示）
+    if (framePrompts.value[selectedFrameType.value]) {
+      console.log(`设置 ${selectedFrameType.value} 提示词:`, framePrompts.value[selectedFrameType.value]);
+      currentFramePrompt.value = framePrompts.value[selectedFrameType.value];
+    } else {
+      console.log(`未找到 ${selectedFrameType.value} 类型的提示词`);
     }
-  } else {
-    currentFramePrompt.value = "";
+  } catch (error) {
+    console.error("Failed to load frame prompts:", error);
   }
 
   // 重置切换标志

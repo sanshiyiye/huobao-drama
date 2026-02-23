@@ -48,7 +48,7 @@ func NewOpenAISoraClient(baseURL, apiKey, model string) *OpenAISoraClient {
 		APIKey:  apiKey,
 		Model:   model,
 		HTTPClient: &http.Client{
-			Timeout: 300 * time.Second,
+			Timeout: 900 * time.Second,
 		},
 	}
 }

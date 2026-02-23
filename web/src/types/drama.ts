@@ -44,6 +44,7 @@ export interface Character {
   sort_order?: number
   image_url?: string
   local_path?: string
+  image_ref?: string // 角色图片引用命名
   image_generation_status?: string
   image_generation_error?: string
   created_at: string
@@ -105,6 +106,7 @@ export interface Scene {
   drama_id: string
   location: string
   time: string
+  image_ref?: string // 场景图片引用命名
   prompt: string
   description?: string
   title?: string

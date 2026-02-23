@@ -359,7 +359,34 @@ func (s *ImageGenerationService) completeImageGeneration(imageGenID uint, result
 	var localPath *string
 	if s.localStorage != nil && result.ImageURL != "" &&
 		(strings.HasPrefix(result.ImageURL, "http://") || strings.HasPrefix(result.ImageURL, "https://")) {
-		downloadResult, err := s.localStorage.DownloadFromURLWithPath(result.ImageURL, "images")
+		var filename string
+		// 首先获取 imageGen 变量
+		var imageGen models.ImageGeneration
+		if err := s.db.First(&imageGen, imageGenID).Error; err != nil {
+			s.log.Warnw("Failed to get image generation record", "error", err, "image_gen_id", imageGenID)
+		}
+
+		// 根据图片类型获取对应的引用命名作为文件名
+		if imageGen.CharacterID != nil {
+			var character models.Character
+			if err := s.db.First(&character, imageGen.CharacterID).Error; err == nil && character.ImageRef != "" {
+				filename = character.ImageRef
+			}
+		} else if imageGen.SceneID != nil {
+			var scene models.Scene
+			if err := s.db.First(&scene, imageGen.SceneID).Error; err == nil && scene.ImageRef != "" {
+				filename = scene.ImageRef
+			}
+		}
+
+		var downloadResult *storage.DownloadResult
+		var err error
+		if filename != "" {
+			downloadResult, err = s.localStorage.DownloadFromURLWithPath(result.ImageURL, "images", filename)
+		} else {
+			downloadResult, err = s.localStorage.DownloadFromURLWithPath(result.ImageURL, "images")
+		}
+
 		if err != nil {
 			errStr := err.Error()
 			if len(errStr) > 200 {
@@ -898,11 +925,23 @@ func (s *ImageGenerationService) processBackgroundExtraction(taskID string, epis
 		for _, bgInfo := range backgroundsInfo {
 			// 保存新场景到数据库（章节级）
 			episodeIDVal := episode.ID
+			// 生成场景图片引用命名（image_ref）
+			imageRef := fmt.Sprintf("scene_%s_%s",
+				strings.ToLower(strings.ReplaceAll(bgInfo.Location, " ", "_")),
+				strings.ToLower(strings.ReplaceAll(bgInfo.Time, " ", "_")))
+			// 替换特殊字符，确保文件名有效
+			imageRef = strings.ReplaceAll(imageRef, "/", "_")
+			imageRef = strings.ReplaceAll(imageRef, "\\", "_")
+			imageRef = strings.ReplaceAll(imageRef, ":", "_")
+			imageRef = strings.ReplaceAll(imageRef, "?", "_")
+			imageRef = strings.ReplaceAll(imageRef, "*", "_")
+
 			scene := &models.Scene{
 				DramaID:         dramaID,
 				EpisodeID:       &episodeIDVal,
 				Location:        bgInfo.Location,
 				Time:            bgInfo.Time,
+				ImageRef:        imageRef, // 设置场景图片引用命名
 				Prompt:          bgInfo.Prompt,
 				StoryboardCount: 1, // 默认为1
 				Status:          "pending",

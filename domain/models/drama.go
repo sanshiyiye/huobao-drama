@@ -39,6 +39,7 @@ type Character struct {
 	ID              uint           `gorm:"primaryKey;autoIncrement" json:"id"`
 	DramaID         uint           `gorm:"not null;index" json:"drama_id"`
 	Name            string         `gorm:"type:varchar(100);not null" json:"name"`
+	ImageRef        string         `gorm:"type:varchar(100)" json:"image_ref"` // 角色图片引用命名
 	Role            *string        `gorm:"type:varchar(50)" json:"role"`
 	Age             *string        `gorm:"type:varchar(20)" json:"age"`
 	Gender          *string        `gorm:"type:varchar(10)" json:"gender"`
@@ -137,6 +138,7 @@ type Scene struct {
 	EpisodeID       *uint          `gorm:"index:idx_scenes_episode_id" json:"episode_id"` // 场景所属章节
 	Location        string         `gorm:"type:varchar(200);not null" json:"location"`
 	Time            string         `gorm:"type:varchar(100);not null" json:"time"`
+	ImageRef        string         `gorm:"type:varchar(100)" json:"image_ref"` // 场景图片引用命名
 	Prompt          string         `gorm:"type:text;not null" json:"prompt"`
 	StoryboardCount int            `gorm:"default:1" json:"storyboard_count"`
 	ImageURL        *string        `gorm:"type:varchar(500)" json:"image_url"`

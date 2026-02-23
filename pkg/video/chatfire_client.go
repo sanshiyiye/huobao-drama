@@ -117,7 +117,7 @@ func NewChatfireClient(baseURL, apiKey, model, endpoint, queryEndpoint string) *
 		Endpoint:      endpoint,
 		QueryEndpoint: queryEndpoint,
 		HTTPClient: &http.Client{
-			Timeout: 300 * time.Second,
+			Timeout: 900 * time.Second, // 从5分钟增加到15分钟
 		},
 	}
 }

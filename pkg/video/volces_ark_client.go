@@ -71,7 +71,7 @@ func NewVolcesArkClient(baseURL, apiKey, model, endpoint, queryEndpoint string) 
 		Endpoint:      endpoint,
 		QueryEndpoint: queryEndpoint,
 		HTTPClient: &http.Client{
-			Timeout: 300 * time.Second,
+			Timeout: 900 * time.Second,
 		},
 	}
 }

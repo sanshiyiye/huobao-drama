@@ -16,22 +16,24 @@ import (
 )
 
 type StoryboardService struct {
-	db          *gorm.DB
-	aiService   *AIService
-	taskService *TaskService
-	log         *logger.Logger
-	config      *config.Config
-	promptI18n  *PromptI18n
+	db              *gorm.DB
+	aiService       *AIService
+	taskService     *TaskService
+	log             *logger.Logger
+	config          *config.Config
+	promptI18n      *PromptI18n
+	framePromptService *FramePromptService
 }
 
 func NewStoryboardService(db *gorm.DB, cfg *config.Config, log *logger.Logger) *StoryboardService {
 	return &StoryboardService{
-		db:          db,
-		aiService:   NewAIService(db, log),
-		taskService: NewTaskService(db, log),
-		log:         log,
-		config:      cfg,
-		promptI18n:  NewPromptI18n(cfg),
+		db:              db,
+		aiService:       NewAIService(db, log),
+		taskService:     NewTaskService(db, log),
+		log:             log,
+		config:          cfg,
+		promptI18n:      NewPromptI18n(cfg),
+		framePromptService: NewFramePromptService(db, cfg, log),
 	}
 }
 
@@ -63,12 +65,7 @@ type GenerateStoryboardResult struct {
 
 func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (string, error) {
 	// 从数据库获取剧集信息
-	var episode struct {
-		ID            string
-		ScriptContent *string
-		Description   *string
-		DramaID       string
-	}
+	var episode models.Episode
 
 	err := s.db.Table("episodes").
 		Select("episodes.id, episodes.script_content, episodes.description, episodes.drama_id").
@@ -90,11 +87,12 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 		return "", fmt.Errorf("剧本内容为空，请先生成剧集内容")
 	}
 
-	// 获取该剧本的所有角色
+	// 获取该剧集关联的角色资产
 	var characters []models.Character
-	if err := s.db.Where("drama_id = ?", episode.DramaID).Order("name ASC").Find(&characters).Error; err != nil {
-		return "", fmt.Errorf("获取角色列表失败: %w", err)
+	if err := s.db.Preload("Characters").Where("id = ? AND drama_id = ?", episodeID, episode.DramaID).First(&episode).Error; err != nil {
+		return "", fmt.Errorf("获取剧集信息失败: %w", err)
 	}
+	characters = episode.Characters
 
 	// 构建角色列表字符串（包含ID和名称）
 	characterList := "无角色"
@@ -757,8 +755,13 @@ func (s *StoryboardService) saveStoryboards(episodeID string, storyboards []Stor
 			"episode_id", uint(epID),
 			"deleted_count", result.RowsAffected)
 
-		// 注意：不删除背景，因为背景是在分镜拆解前就提取好的
-		// AI会直接返回scene_id，不需要在这里做字符串匹配
+			// 注意：不删除背景，因为背景是在分镜拆解前就提取好的
+		// 获取该章节已提取的所有场景
+		var existingScenes []models.Scene
+		if err := tx.Where("drama_id = ? AND episode_id = ?", episode.DramaID, episode.ID).Find(&existingScenes).Error; err != nil {
+			s.log.Warnw("Failed to load existing scenes", "error", err, "episode_id", episode.ID)
+		}
+		s.log.Infow("Loaded existing scenes for episode", "episode_id", episode.ID, "scene_count", len(existingScenes))
 
 		// 保存新的分镜头
 		for _, sb := range storyboards {
@@ -766,8 +769,9 @@ func (s *StoryboardService) saveStoryboards(episodeID string, storyboards []Stor
 			description := fmt.Sprintf("【镜头类型】%s\n【运镜】%s\n【动作】%s\n【对话】%s\n【结果】%s\n【情绪】%s",
 				sb.ShotType, sb.Movement, sb.Action, sb.Dialogue, sb.Result, sb.Emotion)
 
-			// 生成两种专用提示词
-			imagePrompt := s.generateImagePrompt(sb) // 专用于图片生成
+			// 不自动生成图片提示词，只在专业制作界面通过"提取提示词"按钮生成
+			// 视频提示词仍自动生成
+			var imagePromptPtr *string
 			videoPrompt := s.generateVideoPrompt(sb) // 专用于视频生成
 
 			// 处理 dialogue 字段
@@ -776,11 +780,28 @@ func (s *StoryboardService) saveStoryboards(episodeID string, storyboards []Stor
 				dialoguePtr = &sb.Dialogue
 			}
 
-			// 使用AI直接返回的SceneID
+			// 首先尝试使用AI直接返回的SceneID
+			var sceneID *uint
 			if sb.SceneID != nil {
 				s.log.Infow("Background ID from AI",
 					"shot_number", sb.ShotNumber,
 					"scene_id", *sb.SceneID)
+				sceneID = sb.SceneID
+			} else {
+				// 如果AI没有返回SceneID，根据Location和Time匹配已提取的场景
+				for _, scene := range existingScenes {
+					// 简单的匹配逻辑：检查Location和Time是否部分匹配
+					if strings.Contains(strings.ToLower(sb.Location), strings.ToLower(scene.Location)) &&
+						strings.Contains(strings.ToLower(sb.Time), strings.ToLower(scene.Time)) {
+						s.log.Infow("Matched scene by location and time",
+							"shot_number", sb.ShotNumber,
+							"scene_id", scene.ID,
+							"location", scene.Location,
+							"time", scene.Time)
+						sceneID = &scene.ID
+						break
+					}
+				}
 			}
 
 			// 处理 title 字段
@@ -821,7 +842,7 @@ func (s *StoryboardService) saveStoryboards(episodeID string, storyboards []Stor
 
 			scene := models.Storyboard{
 				EpisodeID:        uint(epID),
-				SceneID:          sb.SceneID,
+				SceneID:          sceneID,
 				StoryboardNumber: sb.ShotNumber,
 				Title:            titlePtr,
 				Location:         &sb.Location,
@@ -834,7 +855,7 @@ func (s *StoryboardService) saveStoryboards(episodeID string, storyboards []Stor
 				Result:           resultPtr,
 				Atmosphere:       atmospherePtr,
 				Dialogue:         dialoguePtr,
-				ImagePrompt:      &imagePrompt,
+				ImagePrompt:      imagePromptPtr, // 不自动生成图片提示词
 				VideoPrompt:      &videoPrompt,
 				BgmPrompt:        bgmPromptPtr,
 				SoundEffect:      soundEffectPtr,
@@ -846,22 +867,77 @@ func (s *StoryboardService) saveStoryboards(episodeID string, storyboards []Stor
 				return err
 			}
 
-			// 关联角色
+			// 关联角色（优化：确保角色ID类型正确匹配）
 			if len(sb.Characters) > 0 {
 				var characters []models.Character
 				if err := tx.Where("id IN ?", sb.Characters).Find(&characters).Error; err != nil {
 					s.log.Warnw("Failed to load characters for association", "error", err, "character_ids", sb.Characters)
 				} else if len(characters) > 0 {
-					if err := tx.Model(&scene).Association("Characters").Append(characters); err != nil {
-						s.log.Warnw("Failed to associate characters", "error", err, "shot_number", sb.ShotNumber)
+					// 验证角色是否属于该剧集所属的项目
+					var validCharacters []models.Character
+					for _, char := range characters {
+						if char.DramaID == episode.DramaID {
+							validCharacters = append(validCharacters, char)
+						}
+					}
+
+					if len(validCharacters) > 0 {
+						if err := tx.Model(&scene).Association("Characters").Append(validCharacters); err != nil {
+							s.log.Warnw("Failed to associate characters", "error", err, "shot_number", sb.ShotNumber)
+						} else {
+							s.log.Infow("Characters associated successfully",
+								"shot_number", sb.ShotNumber,
+								"character_ids", sb.Characters,
+								"valid_character_count", len(validCharacters),
+								"character_names", func() []string {
+									var names []string
+									for _, c := range validCharacters {
+										names = append(names, c.Name)
+									}
+									return names
+								}())
+						}
 					} else {
-						s.log.Infow("Characters associated successfully",
-							"shot_number", sb.ShotNumber,
-							"character_ids", sb.Characters,
-							"count", len(characters))
+						s.log.Warnw("No valid characters found for association", "shot_number", sb.ShotNumber, "character_ids", sb.Characters)
 					}
 				}
 			}
+
+			// 分镜保存成功后，预生成各种类型的帧提示词
+			go func(storyboardID uint) {
+				// 预生成首帧提示词
+				_, _ = s.framePromptService.GenerateFramePrompt(GenerateFramePromptRequest{
+					StoryboardID: fmt.Sprintf("%d", storyboardID),
+					FrameType:    FrameTypeFirst,
+				}, "")
+
+				// 预生成尾帧提示词
+				_, _ = s.framePromptService.GenerateFramePrompt(GenerateFramePromptRequest{
+					StoryboardID: fmt.Sprintf("%d", storyboardID),
+					FrameType:    FrameTypeLast,
+				}, "")
+
+				// 预生成关键帧提示词
+				_, _ = s.framePromptService.GenerateFramePrompt(GenerateFramePromptRequest{
+					StoryboardID: fmt.Sprintf("%d", storyboardID),
+					FrameType:    FrameTypeKey,
+				}, "")
+
+				// 预生成动作序列提示词
+				_, _ = s.framePromptService.GenerateFramePrompt(GenerateFramePromptRequest{
+					StoryboardID: fmt.Sprintf("%d", storyboardID),
+					FrameType:    FrameTypeAction,
+				}, "")
+
+				// 预生成分镜板提示词
+				_, _ = s.framePromptService.GenerateFramePrompt(GenerateFramePromptRequest{
+					StoryboardID: fmt.Sprintf("%d", storyboardID),
+					FrameType:    FrameTypePanel,
+					PanelCount:   3,
+				}, "")
+
+				s.log.Infow("预生成帧提示词完成", "storyboard_id", storyboardID)
+			}(scene.ID)
 		}
 
 		s.log.Infow("Storyboards saved successfully", "episode_id", episodeID, "count", len(storyboards))
@@ -916,8 +992,9 @@ func (s *StoryboardService) CreateStoryboard(req *CreateStoryboardRequest) (*mod
 		sb.Title = *req.Title
 	}
 
-	// 生成提示词
-	imagePrompt := s.generateImagePrompt(sb)
+	// 不自动生成图片提示词，只在专业制作界面通过"提取提示词"按钮生成
+	// 视频提示词仍自动生成
+	var imagePromptPtr *string
 	videoPrompt := s.generateVideoPrompt(sb)
 
 	// 构建 description
@@ -941,7 +1018,7 @@ func (s *StoryboardService) CreateStoryboard(req *CreateStoryboardRequest) (*mod
 		Result:           req.Result,
 		Atmosphere:       req.Atmosphere,
 		Dialogue:         req.Dialogue,
-		ImagePrompt:      &imagePrompt,
+		ImagePrompt:      imagePromptPtr, // 不自动生成图片提示词
 		VideoPrompt:      &videoPrompt,
 		BgmPrompt:        req.BgmPrompt,
 		SoundEffect:      req.SoundEffect,
@@ -952,13 +1029,43 @@ func (s *StoryboardService) CreateStoryboard(req *CreateStoryboardRequest) (*mod
 		return nil, fmt.Errorf("failed to create storyboard: %w", err)
 	}
 
-	// 关联角色
+	// 关联角色（优化：确保角色属于该剧集所属的项目）
 	if len(req.Characters) > 0 {
 		var characters []models.Character
 		if err := s.db.Where("id IN ?", req.Characters).Find(&characters).Error; err != nil {
 			s.log.Warnw("Failed to find characters for new storyboard", "error", err)
 		} else if len(characters) > 0 {
-			s.db.Model(modelSB).Association("Characters").Append(characters)
+			// 获取剧集信息以验证角色属于该项目
+			var episode models.Episode
+			if err := s.db.First(&episode, req.EpisodeID).Error; err == nil {
+				var validCharacters []models.Character
+				for _, char := range characters {
+					if char.DramaID == episode.DramaID {
+						validCharacters = append(validCharacters, char)
+					}
+				}
+
+				if len(validCharacters) > 0 {
+					if err := s.db.Model(modelSB).Association("Characters").Append(validCharacters); err != nil {
+						s.log.Warnw("Failed to associate characters with new storyboard", "error", err)
+					} else {
+						s.log.Infow("Characters associated with new storyboard",
+							"storyboard_id", modelSB.ID,
+							"character_count", len(validCharacters),
+							"character_ids", func() []uint {
+								var ids []uint
+								for _, c := range validCharacters {
+									ids = append(ids, c.ID)
+								}
+								return ids
+							}())
+					}
+				} else {
+					s.log.Warnw("No valid characters found for association with new storyboard",
+						"storyboard_id", modelSB.ID,
+						"character_ids", req.Characters)
+				}
+			}
 		}
 	}
 
