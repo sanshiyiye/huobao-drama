@@ -23,52 +23,13 @@
     <!-- 主编辑区域 -->
     <div class="editor-main">
       <!-- 左侧分镜列表 -->
-      <div class="storyboard-panel">
-        <div class="panel-header">
-          <h3>{{ $t("storyboard.scriptStructure") }}</h3>
-          <el-button text :icon="Plus" @click="handleAddStoryboard">{{
-            $t("storyboard.add")
-          }}</el-button>
-        </div>
-
-        <div class="storyboard-list">
-          <div
-            v-for="(shot, index) in storyboards"
-            :key="shot.id"
-            class="storyboard-item"
-            :class="{ active: currentStoryboardId === shot.id }"
-            @click="selectStoryboard(shot.id)"
-          >
-            <div class="shot-content">
-              <div class="shot-header">
-                <div class="shot-title-row">
-                  <span class="shot-number">{{
-                    $t("storyboard.shotNumber", {
-                      number: shot.storyboard_number,
-                    })
-                  }}</span>
-                  <span class="shot-title">{{
-                    shot.title || $t("storyboard.untitled")
-                  }}</span>
-                </div>
-                <div class="shot-actions">
-                  <span class="shot-duration">{{ shot.duration }}s</span>
-                  <el-button
-                    link
-                    type="danger"
-                    :icon="Delete"
-                    @click.stop="handleDeleteStoryboard(shot)"
-                    class="delete-btn"
-                  />
-                </div>
-              </div>
-              <div class="shot-action" v-if="shot.action">
-                {{ shot.action }}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <StoryboardList
+        :storyboards="storyboards"
+        :current-storyboard-id="currentStoryboardId"
+        @select="selectStoryboard"
+        @add="handleAddStoryboard"
+        @delete="handleDeleteStoryboard"
+      />
 
       <!-- 中间时间线编辑区域 -->
       <div class="timeline-area">
@@ -1579,184 +1540,20 @@
           <!-- 音效与配乐标签 -->
           <el-tab-pane :label="$t('video.soundAndMusicTab')" name="audio">
             <div class="tab-content">
-              <el-empty :description="$t('video.soundMusicInDev')" />
+              <AudioTab />
             </div>
           </el-tab-pane>
 
           <!-- 视频合成列表标签 -->
           <el-tab-pane :label="$t('video.videoMerge')" name="merges">
             <div class="tab-content">
-              <div class="merges-list" v-loading="loadingMerges">
-                <el-empty
-                  v-if="videoMerges.length === 0"
-                  :description="$t('video.noMergeRecords')"
-                  :image-size="120"
-                >
-                  <template #description>
-                    <div
-                      style="color: #909399; font-size: 14px; margin-top: 12px"
-                    >
-                      <p style="margin: 0">{{ $t("video.noMergeYet") }}</p>
-                      <p style="margin: 8px 0 0 0; font-size: 12px">
-                        {{ $t("video.mergeInstructions") }}
-                      </p>
-                    </div>
-                  </template>
-                </el-empty>
-                <div v-else class="merge-items">
-                  <div
-                    v-for="merge in videoMerges"
-                    :key="merge.id"
-                    class="merge-item"
-                    :class="'merge-status-' + merge.status"
-                  >
-                    <!-- 状态指示条 -->
-                    <div class="status-indicator"></div>
-
-                    <!-- 主要内容区域 -->
-                    <div class="merge-content">
-                      <!-- 标题和状态 -->
-                      <div class="merge-header">
-                        <div class="title-section">
-                          <el-icon :size="20" class="title-icon">
-                            <VideoCamera v-if="merge.status === 'completed'" />
-                            <Loading
-                              v-else-if="merge.status === 'processing'"
-                              class="rotating"
-                            />
-                            <WarningFilled
-                              v-else-if="merge.status === 'failed'"
-                            />
-                            <Clock v-else />
-                          </el-icon>
-                          <h3 class="merge-title">{{ merge.title }}</h3>
-                        </div>
-                        <el-tag
-                          :type="
-                            merge.status === 'completed'
-                              ? 'success'
-                              : merge.status === 'failed'
-                                ? 'danger'
-                                : 'warning'
-                          "
-                          effect="dark"
-                          size="large"
-                          round
-                        >
-                          {{
-                            merge.status === "pending"
-                              ? "等待中"
-                              : merge.status === "processing"
-                                ? "合成中"
-                                : merge.status === "completed"
-                                  ? "已完成"
-                                  : "失败"
-                          }}
-                        </el-tag>
-                      </div>
-
-                      <!-- 详细信息网格 -->
-                      <div class="merge-details">
-                        <div class="detail-item">
-                          <div class="detail-icon">
-                            <el-icon :size="16">
-                              <Timer />
-                            </el-icon>
-                          </div>
-                          <div class="detail-content">
-                            <div class="detail-label">
-                              {{ $t("professionalEditor.videoDuration") }}
-                            </div>
-                            <div class="detail-value">
-                              {{
-                                merge.duration
-                                  ? `${merge.duration}
-                              ${$t("professionalEditor.seconds")}`
-                                  : "-"
-                              }}
-                            </div>
-                          </div>
-                        </div>
-                        <div class="detail-item">
-                          <div class="detail-icon">
-                            <el-icon :size="16">
-                              <Calendar />
-                            </el-icon>
-                          </div>
-                          <div class="detail-content">
-                            <div class="detail-label">创建时间</div>
-                            <div class="detail-value">
-                              {{ formatDateTime(merge.created_at) }}
-                            </div>
-                          </div>
-                        </div>
-                        <div class="detail-item" v-if="merge.completed_at">
-                          <div class="detail-icon">
-                            <el-icon :size="16">
-                              <Check />
-                            </el-icon>
-                          </div>
-                          <div class="detail-content">
-                            <div class="detail-label">完成时间</div>
-                            <div class="detail-value">
-                              {{ formatDateTime(merge.completed_at) }}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <!-- 错误提示 -->
-                      <div
-                        class="merge-error"
-                        v-if="merge.status === 'failed' && merge.error_msg"
-                      >
-                        <el-alert type="error" :closable="false" show-icon>
-                          <template #title>
-                            <div style="font-size: 13px; line-height: 1.5">
-                              {{ merge.error_msg }}
-                            </div>
-                          </template>
-                        </el-alert>
-                      </div>
-
-                      <!-- 操作按钮 -->
-                      <div class="merge-actions">
-                        <template
-                          v-if="
-                            merge.status === 'completed' && merge.merged_url
-                          "
-                        >
-                          <el-button
-                            type="primary"
-                            :icon="VideoCamera"
-                            @click="
-                              downloadVideo(merge.merged_url, merge.title)
-                            "
-                            round
-                          >
-                            下载视频
-                          </el-button>
-                          <el-button
-                            :icon="View"
-                            @click="previewMergedVideo(merge.merged_url)"
-                            round
-                          >
-                            在线预览
-                          </el-button>
-                        </template>
-                        <el-button
-                          type="danger"
-                          :icon="Delete"
-                          @click="deleteMerge(merge.id)"
-                          round
-                        >
-                          删除
-                        </el-button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <VideoMergeTab
+                :video-merged="videoMerges"
+                :loading-merged="loadingMerges"
+                @preview="previewMergedVideo"
+                @download="downloadVideo"
+                @delete="deleteMerge"
+              />
             </div>
           </el-tab-pane>
         </el-tabs>
@@ -2018,6 +1815,9 @@ import {
 import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
+import StoryboardList from "./ProfessionalEditor/components/StoryboardList.vue";
+import AudioTab from "./ProfessionalEditor/components/AudioTab.vue";
+import VideoMergeTab from "./ProfessionalEditor/components/VideoMergeTab.vue";
 import {
   ArrowLeft,
   Plus,
