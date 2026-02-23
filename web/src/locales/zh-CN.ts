@@ -379,6 +379,7 @@ export default {
     extractedData: '已提取数据',
     characters: '角色',
     scenes: '场景',
+    style: '风格',
     extractedCharacters: '提取的角色（本集）',
     extractedScenes: '提取的场景（本集）',
     extractCharactersAndScenes: '提取角色和场景',

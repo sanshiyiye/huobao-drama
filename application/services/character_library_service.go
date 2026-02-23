@@ -510,6 +510,93 @@ func (s *CharacterLibraryService) BatchGenerateCharacterImages(characterIDs []st
 		"total", len(characterIDs))
 }
 
+// ExtractStyleFromScript 从分集剧本中提取风格
+func (s *CharacterLibraryService) ExtractStyleFromScript(episodeID uint) (string, error) {
+	var episode models.Episode
+	if err := s.db.First(&episode, "id = ?", episodeID).Error; err != nil {
+		s.log.Warnw("Episode not found", "episode_id", episodeID, "error", err)
+		return "", fmt.Errorf("episode not found")
+	}
+
+	if episode.ScriptContent == nil || *episode.ScriptContent == "" {
+		return "", fmt.Errorf("剧本内容为空")
+	}
+
+	task, err := s.taskService.CreateTask("style_extraction", fmt.Sprintf("%d", episode.DramaID))
+	if err != nil {
+		return "", fmt.Errorf("创建任务失败: %w", err)
+	}
+
+	go s.processStyleExtraction(task.ID, episode)
+
+	return task.ID, nil
+}
+
+// processStyleExtraction 处理风格提取
+func (s *CharacterLibraryService) processStyleExtraction(taskID string, episode models.Episode) {
+	s.taskService.UpdateTaskStatus(taskID, "processing", 0, "正在分析剧本风格...")
+
+	script := ""
+	if episode.ScriptContent != nil {
+		script = *episode.ScriptContent
+	}
+
+	// 获取 drama 的 style 信息
+	var drama models.Drama
+	if err := s.db.First(&drama, episode.DramaID).Error; err != nil {
+		s.log.Warnw("Failed to load drama", "error", err, "drama_id", episode.DramaID)
+	}
+
+	// 使用 AI 分析剧本内容并提取剧情类型风格标签
+	s.taskService.UpdateTaskStatus(taskID, "processing", 30, "正在使用 AI 分析剧本风格...")
+
+	prompt := s.promptI18n.GetStyleExtractionPrompt()
+	userPrompt := fmt.Sprintf("【剧本内容】\n%s", script)
+
+	response, err := s.aiService.GenerateText(userPrompt, prompt, ai.WithMaxTokens(1000))
+	if err != nil {
+		s.taskService.UpdateTaskError(taskID, err)
+		return
+	}
+
+	// 解析 AI 返回的风格选择
+	var styleResult struct {
+		Style  string `json:"style"`
+		Reason string `json:"reason"`
+	}
+
+	if err := utils.SafeParseAIJSON(response, &styleResult); err != nil {
+		s.log.Errorw("Failed to parse AI style response", "error", err, "response", response)
+		s.taskService.UpdateTaskError(taskID, err)
+		return
+	}
+
+	if styleResult.Style == "" {
+		s.log.Errorw("AI returned empty style", "response", response)
+		s.taskService.UpdateTaskError(taskID, fmt.Errorf("AI 返回的风格为空"))
+		return
+	}
+
+	style := styleResult.Style
+	s.log.Infow("AI selected style", "style", style, "reason", styleResult.Reason, "task_id", taskID)
+
+	// 更新 drama 的剧情风格
+	drama.PlotStyle = style
+	if err := s.db.Save(&drama).Error; err != nil {
+		s.log.Errorw("Failed to update drama plot style", "error", err, "drama_id", drama.ID)
+		s.taskService.UpdateTaskError(taskID, err)
+		return
+	}
+
+	// 保存任务结果
+	s.taskService.UpdateTaskResult(taskID, map[string]interface{}{
+		"style": style,
+		"reason": styleResult.Reason,
+	})
+
+	s.log.Infow("Style extraction completed", "drama_id", drama.ID, "style", style, "task_id", taskID)
+}
+
 // ExtractCharactersFromScript 从分集剧本中提取角色
 func (s *CharacterLibraryService) ExtractCharactersFromScript(episodeID uint) (string, error) {
 	var episode models.Episode
@@ -546,7 +633,9 @@ func (s *CharacterLibraryService) processCharacterExtraction(taskID string, epis
 		s.log.Warnw("Failed to load drama", "error", err, "drama_id", episode.DramaID)
 	}
 
-	prompt := s.promptI18n.GetCharacterExtractionPromptTest(drama.Style)
+	// 分析剧本内容，提取剧情背景信息
+	context := s.promptI18n.AnalyzeScriptContext(script)
+	prompt := s.promptI18n.GetCharacterExtractionPromptTest(drama.Style, drama.PlotStyle, context)
 	userPrompt := fmt.Sprintf("【剧本内容】\n%s", script)
 
 	response, err := s.aiService.GenerateText(userPrompt, prompt, ai.WithMaxTokens(3000))

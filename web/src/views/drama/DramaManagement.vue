@@ -124,6 +124,16 @@
                     drama?.description || $t("drama.management.noDescription")
                   }}</span>
                 </el-descriptions-item>
+                <el-descriptions-item :label="$t('drama.management.artStyle')">
+                  <span class="info-value">{{
+                    drama?.style || $t("drama.management.noStyle")
+                  }}</span>
+                </el-descriptions-item>
+                <el-descriptions-item :label="$t('drama.management.plotStyle')">
+                  <span class="info-value">{{
+                    drama?.plot_style || $t("drama.management.noPlotStyle")
+                  }}</span>
+                </el-descriptions-item>
               </el-descriptions>
             </el-card>
           </el-tab-pane>
@@ -955,6 +965,7 @@ const editProjectForm = ref({
   title: "",
   description: "",
   style: "ghibli",
+  plot_style: "",
   aspect_ratio: "16:9",
 });
 
@@ -1088,6 +1099,7 @@ const openEditProjectDialog = () => {
     title: drama.value.title,
     description: drama.value.description || "",
     style: drama.value.style || "ghibli",
+    plot_style: drama.value.plot_style || "",
     aspect_ratio: drama.value.aspect_ratio || "16:9",
   };
   editProjectDialogVisible.value = true;
@@ -1105,6 +1117,7 @@ const saveEditProject = async () => {
       title: editProjectForm.value.title,
       description: editProjectForm.value.description,
       style: editProjectForm.value.style,
+      plot_style: editProjectForm.value.plot_style,
       aspect_ratio: editProjectForm.value.aspect_ratio,
     });
     ElMessage.success("保存成功");

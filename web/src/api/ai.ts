@@ -32,5 +32,9 @@ export const aiAPI = {
 
   testConnection(data: TestConnectionRequest) {
     return request.post('/ai-configs/test', data)
+  },
+
+  extractStyle(episodeId: string) {
+    return request.post(`/episodes/${episodeId}/style/extract`)
   }
 }

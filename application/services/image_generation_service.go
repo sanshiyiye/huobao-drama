@@ -266,19 +266,32 @@ func (s *ImageGenerationService) ProcessImageGeneration(imageGenID uint) {
 		opts = append(opts, image.WithReferenceImages(referenceImages))
 	}
 
-	// 构建完整的提示词：风格提示词 + 用户提示词
+	// 构建完整的提示词：艺术风格提示词 + 剧情风格提示词 + 用户提示词
 	prompt := imageGen.Prompt
 
-	// 如果drama有风格设置，添加风格提示词
+	// 如果drama有艺术风格设置，添加艺术风格提示词
 	if drama.Style != "" && drama.Style != "realistic" {
 		stylePrompt := s.promptI18n.GetStylePrompt(drama.Style)
 		if stylePrompt != "" {
-			// 将风格提示词作为系统级约束添加到提示词前面
+			// 将艺术风格提示词作为系统级约束添加到提示词前面
 			prompt = stylePrompt + "\n\n" + prompt
-			s.log.Infow("Added style prompt to image generation",
+			s.log.Infow("Added art style prompt to image generation",
 				"id", imageGenID,
 				"style", drama.Style,
 				"style_prompt_length", len(stylePrompt))
+		}
+	}
+
+	// 如果drama有剧情风格设置，添加剧情风格提示词
+	if drama.PlotStyle != "" {
+		plotStylePrompt := s.promptI18n.GetStylePrompt(drama.PlotStyle)
+		if plotStylePrompt != "" {
+			// 将剧情风格提示词添加到提示词前面
+			prompt = plotStylePrompt + "\n\n" + prompt
+			s.log.Infow("Added plot style prompt to image generation",
+				"id", imageGenID,
+				"plot_style", drama.PlotStyle,
+				"plot_style_prompt_length", len(plotStylePrompt))
 		}
 	}
 

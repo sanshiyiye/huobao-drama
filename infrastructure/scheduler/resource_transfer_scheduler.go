@@ -1,8 +1,6 @@
 package scheduler
 
 import (
-	"time"
-
 	"github.com/drama-generator/backend/application/services"
 	"github.com/drama-generator/backend/pkg/logger"
 	"github.com/robfig/cron/v3"

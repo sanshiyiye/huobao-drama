@@ -286,3 +286,22 @@ func (h *CharacterLibraryHandler) ExtractCharacters(c *gin.Context) {
 
 	response.Success(c, gin.H{"task_id": taskID, "message": "角色提取任务已提交"})
 }
+
+// ExtractStyle 从剧本提取风格
+func (h *CharacterLibraryHandler) ExtractStyle(c *gin.Context) {
+	episodeIDStr := c.Param("episode_id")
+	episodeID, err := strconv.ParseUint(episodeIDStr, 10, 32)
+	if err != nil {
+		response.BadRequest(c, "Invalid episode_id")
+		return
+	}
+
+	taskID, err := h.libraryService.ExtractStyleFromScript(uint(episodeID))
+	if err != nil {
+		h.log.Errorw("Failed to extract style", "error", err)
+		response.InternalError(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{"task_id": taskID, "message": "风格提取任务已提交"})
+}

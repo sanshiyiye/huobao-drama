@@ -397,6 +397,7 @@ export default {
     extractedData: 'Extracted Data',
     characters: 'Characters',
     scenes: 'Scenes',
+    style: 'Style',
     extractedCharacters: 'Extracted Characters (This Episode)',
     extractedScenes: 'Extracted Scenes (This Episode)',
     extractCharactersAndScenes: 'Extract Characters and Scenes',

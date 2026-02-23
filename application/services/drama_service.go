@@ -32,6 +32,7 @@ type CreateDramaRequest struct {
 	Description string `json:"description"`
 	Genre       string `json:"genre"`
 	Style       string `json:"style"`
+	PlotStyle   string `json:"plot_style"`
 	Tags        string `json:"tags"`
 }
 
@@ -40,6 +41,7 @@ type UpdateDramaRequest struct {
 	Description string `json:"description"`
 	Genre       string `json:"genre"`
 	Style       string `json:"style"`
+	PlotStyle   string `json:"plot_style"`
 	Tags        string `json:"tags"`
 	Status      string `json:"status" binding:"omitempty,oneof=draft planning production completed archived"`
 	AspectRatio string `json:"aspect_ratio" binding:"omitempty,oneof=16:9 9:16 1:1"`
@@ -69,6 +71,9 @@ func (s *DramaService) CreateDrama(req *CreateDramaRequest) (*models.Drama, erro
 	}
 	if req.Style != "" {
 		drama.Style = req.Style
+	}
+	if req.PlotStyle != "" {
+		drama.PlotStyle = req.PlotStyle
 	}
 
 	if err := s.db.Create(drama).Error; err != nil {
@@ -280,6 +285,9 @@ func (s *DramaService) UpdateDrama(dramaID string, req *UpdateDramaRequest) (*mo
 	}
 	if req.Style != "" {
 		updates["style"] = req.Style
+	}
+	if req.PlotStyle != "" {
+		updates["plot_style"] = req.PlotStyle
 	}
 	if req.Tags != "" {
 		updates["tags"] = req.Tags
@@ -605,7 +613,7 @@ func (s *DramaService) SaveEpisodes(dramaID string, req *SaveEpisodesRequest) er
 	for _, ep := range req.Episodes {
 		var existingEpisode models.Episode
 		// 查找是否已存在该集数的剧集
-		if err := s.db.Where("drama_id = ? AND episode_num = ?", dramaIDUint, ep.EpisodeNum).First(&existingEpisode).Error; err != nil {
+		if err := s.db.Where("drama_id = ? AND episode_number = ?", dramaIDUint, ep.EpisodeNum).First(&existingEpisode).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				// 不存在，创建新剧集
 				episode := models.Episode{

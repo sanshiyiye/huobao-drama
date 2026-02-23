@@ -12,7 +12,8 @@ type Drama struct {
 	Title         string         `gorm:"type:varchar(200);not null" json:"title"`
 	Description   *string        `gorm:"type:text" json:"description"`
 	Genre         *string        `gorm:"type:varchar(50)" json:"genre"`
-	Style         string         `gorm:"type:varchar(50);default:'realistic'" json:"style"`
+	Style         string         `gorm:"type:varchar(50);default:'realistic'" json:"style"` // 艺术风格
+	PlotStyle     string         `gorm:"type:varchar(50)" json:"plot_style"` // 剧情风格
 	AspectRatio   string         `gorm:"type:varchar(10);default:'16:9'" json:"aspect_ratio"`
 	TotalEpisodes int            `gorm:"default:1" json:"total_episodes"`
 	TotalDuration int            `gorm:"default:0" json:"total_duration"`

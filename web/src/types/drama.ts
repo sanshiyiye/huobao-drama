@@ -7,6 +7,7 @@ export interface Drama {
   description?: string
   genre?: string
   style?: string
+  plot_style?: string
   aspect_ratio?: string
   total_episodes: number
   total_duration: number
@@ -124,6 +125,7 @@ export interface CreateDramaRequest {
   description?: string
   genre?: string
   style?: string
+  plot_style?: string
   tags?: string
 }
 
@@ -132,6 +134,7 @@ export interface UpdateDramaRequest {
   description?: string
   genre?: string
   style?: string
+  plot_style?: string
   tags?: string
   status?: DramaStatus
   aspect_ratio?: string

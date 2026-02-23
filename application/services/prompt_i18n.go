@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/drama-generator/backend/pkg/config"
 )
@@ -28,6 +29,101 @@ func (p *PromptI18n) GetLanguage() string {
 // IsEnglish 判断是否为英文模式（动态读取配置）
 func (p *PromptI18n) IsEnglish() bool {
 	return p.GetLanguage() == "en"
+}
+
+// AnalyzeScriptContext 使用 AI 分析剧本内容，提取剧情背景信息
+func (p *PromptI18n) AnalyzeScriptContext(script string) string {
+	if script == "" {
+		return ""
+	}
+
+	// 首先使用简单的关键词匹配（快速且成本低）
+	var contextMap map[string]string
+
+	if p.IsEnglish() {
+		contextMap = map[string]string{
+			// 中国古代背景
+			"古代":        "ancient Chinese style",
+			"唐朝":        "Tang Dynasty style",
+			"宋朝":        "Song Dynasty style",
+			"明朝":        "Ming Dynasty style",
+			"清朝":        "Qing Dynasty style",
+			"皇宫":        "imperial palace",
+			"宫廷":        "royal court",
+			"汉服":        "traditional Han clothing",
+			// 西方中世纪背景
+			"中世纪":      "medieval European style",
+			"城堡":        "castle",
+			"骑士":        "knight",
+			"盔甲":        "armor",
+			// 现代背景
+			"现代":        "modern style",
+			"都市":        "urban style",
+			"办公室":      "office",
+			"商务":        "business style",
+			// 科幻背景
+			"未来":        "futuristic style",
+			"科幻":        "sci-fi style",
+			"太空":        "space style",
+			"宇宙":        "cosmic style",
+			// 奇幻背景
+			"奇幻":        "fantasy style",
+			"魔法":        "magic style",
+			"精灵":        "elf style",
+			"兽人":        "orc style",
+		}
+	} else {
+		contextMap = map[string]string{
+			// 中国古代背景
+			"古代":        "古代风格",
+			"唐朝":        "唐朝风格",
+			"宋朝":        "宋朝风格",
+			"明朝":        "明朝风格",
+			"清朝":        "清朝风格",
+			"皇宫":        "皇宫风格",
+			"宫廷":        "宫廷风格",
+			"汉服":        "汉服风格",
+			// 西方中世纪背景
+			"中世纪":      "中世纪欧洲风格",
+			"城堡":        "城堡风格",
+			"骑士":        "骑士风格",
+			"盔甲":        "盔甲风格",
+			// 现代背景
+			"现代":        "现代风格",
+			"都市":        "都市风格",
+			"办公室":      "办公室风格",
+			"商务":        "商务风格",
+			// 科幻背景
+			"未来":        "未来风格",
+			"科幻":        "科幻风格",
+			"太空":        "太空风格",
+			"宇宙":        "宇宙风格",
+			// 奇幻背景
+			"奇幻":        "奇幻风格",
+			"魔法":        "魔法风格",
+			"精灵":        "精灵风格",
+			"兽人":        "兽人风格",
+		}
+	}
+
+	var contexts []string
+	for keyword, context := range contextMap {
+		if strings.Contains(script, keyword) {
+			contexts = append(contexts, context)
+		}
+	}
+
+	// 如果简单匹配没有找到足够的信息，考虑使用 AI 分析（待实现）
+	// 这是一个占位符，未来可以实现更复杂的 AI 分析功能
+	/*
+		if len(contexts) == 0 {
+			// 使用 AI 分析剧本内容
+			// 这里需要调用 AI 服务，分析剧本的时代背景、文化特征等
+			// 返回更详细的剧情背景信息
+		}
+	*/
+
+	return strings.Join(contexts, ", ")
 }
 
 // GetStoryboardSystemPrompt 获取分镜生成系统提示词
@@ -141,6 +237,63 @@ func (p *PromptI18n) GetStoryboardSystemPrompt() string {
 - 每个镜头必须有明确的动作和结果
 - 景别选择必须符合叙事节奏（不要连续使用同一景别）
 - 情绪强度必须准确反映剧本氛围变化`
+}
+
+// GetStyleExtractionPrompt 获取风格提取提示词
+func (p *PromptI18n) GetStyleExtractionPrompt() string {
+	if p.IsEnglish() {
+		return `[Task] Analyze the script content and determine the most suitable plot type style
+
+[Requirements]
+1. Analyze the script's content, theme, and emotional tone
+2. Based on the analysis, select the most appropriate plot type style from the following options:
+   - 古装: Ancient costume style, set in historical periods of China
+   - 现代: Modern style, set in contemporary times
+   - 科幻: Science fiction style, set in future or space
+   - 奇幻: Fantasy style, involving magic, mythical creatures, etc.
+   - 历史: Historical style, based on real historical events or figures
+   - 都市: Urban style, set in modern cities
+   - 校园: School style, set in schools or campuses
+   - 言情: Romance style, focusing on love stories
+   - 悬疑: Suspense style, involving mysteries and thrillers
+   - 喜剧: Comedy style, humorous and lighthearted
+   - 动作: Action style, involving fighting and adventures
+
+3. Explain your style selection based on the script content
+
+[Output Format]
+**CRITICAL: Return ONLY a valid JSON object. Do NOT include any markdown code blocks, explanations, or other text. Start directly with { and end with }.**
+
+The JSON object should contain:
+- style: The selected style name (one of the options above)
+- reason: A brief explanation of why this style was chosen`
+	}
+
+	return `【任务】分析剧本内容并确定最合适的剧情类型风格
+
+【要求】
+1. 分析剧本的内容、主题和情感基调
+2. 基于分析结果，从以下选项中选择最合适的剧情类型风格：
+   - 古装: 古代 costume 风格，设定在中国历史时期
+   - 现代: 现代风格，设定在当代
+   - 科幻: 科幻风格，设定在未来或太空
+   - 奇幻: 奇幻风格，涉及魔法、神话生物等
+   - 历史: 历史风格，基于真实历史事件或人物
+   - 都市: 都市风格，设定在现代城市
+   - 校园: 校园风格，设定在学校或校园
+   - 言情: 言情风格，专注于爱情故事
+   - 悬疑: 悬疑风格，涉及谜团和惊悚
+   - 喜剧: 喜剧风格，幽默轻松
+   - 动作: 动作风格，涉及战斗和冒险
+
+3. 基于剧本内容解释你的风格选择
+
+【输出格式】
+**重要：必须只返回纯JSON对象，不要包含任何markdown代码块、说明文字或其他内容。直接以 { 开头，以 } 结尾。**
+
+JSON对象应包含：
+- style: 所选风格名称（上述选项之一）
+- reason: 风格选择的简要说明`
 }
 
 // GetSceneExtractionPrompt 获取场景提取提示词
@@ -445,8 +598,15 @@ Return a JSON object containing:
 }
 
 // GetCharacterExtractionPrompt 获取角色提取提示词
-func (p *PromptI18n) GetCharacterExtractionPrompt(style string) string {
+func (p *PromptI18n) GetCharacterExtractionPrompt(style string, context string) string {
 	imageRatio := "16:9"
+
+	// 处理上下文参数
+	var contextStr string
+	if context != "" {
+		contextStr = ", " + context
+	}
+
 	if p.IsEnglish() {
 		return fmt.Sprintf(`You are a professional character analyst, skilled at extracting and analyzing character information from scripts.
 
@@ -481,11 +641,11 @@ Requirements:
    - For modern or futuristic settings without specific cultural references, you can use neutral racial characteristics
    - Ensure the character appearance matches the script's background and context
 6. Main characters require more detailed descriptions, supporting characters can be simplified
-- **Style Requirement**: %s
+- **Style Requirement**: %s%s
 - **Image Ratio**: %s
 Output Format:
 **CRITICAL: Return ONLY a valid JSON array. Do NOT include any markdown code blocks, explanations, or other text. Start directly with [ and end with ].**
-Each element is a character object containing: name, role, appearance, personality, description, age (string, one of the age stages above), gender (string: male/female/other).`, style, imageRatio)
+Each element is a character object containing: name, role, appearance, personality, description, age (string, one of the age stages above), gender (string: male/female/other).`, style, contextStr, imageRatio)
 	}
 
 	return fmt.Sprintf(`你是一个专业的角色分析师，擅长从剧本中提取和分析角色信息。
@@ -521,18 +681,36 @@ Each element is a character object containing: name, role, appearance, personali
    - 对于现代或未来题材且无特定文化参考的剧本，可以使用中性种族特征
    - 确保角色形象与剧本背景和上下文相符
 6. 主要角色需要更详细的描述，次要角色可以简化
-- **风格要求**：%s
+- **风格要求**：%s%s
 - **图片比例**：%s
 输出格式：
 **重要：必须只返回纯JSON数组，不要包含任何markdown代码块、说明文字或其他内容。直接以 [ 开头，以 ] 结尾。**
-每个元素是一个角色对象，必须包含字段：name, role, appearance, personality, description, age（字符串，取上述年龄阶段之一）, gender（字符串：男/女/其他）。`, style, imageRatio)
+每个元素是一个角色对象，必须包含字段：name, role, appearance, personality, description, age（字符串，取上述年龄阶段之一）, gender（字符串：男/女/其他）。`, style, contextStr, imageRatio)
 }
 
 // GetCharacterExtractionPromptTest 获取测试用的角色提取提示词
-func (p *PromptI18n) GetCharacterExtractionPromptTest(style string) string {
-	imageRatio := "16:9"
-		if p.IsEnglish() {
-			return fmt.Sprintf(`You are an experienced creative director and AI video producer. Your task is to extract and organize detailed character settings for all characters and core items appearing in the script based on the provided script content.
+func (p *PromptI18n) GetCharacterExtractionPromptTest(style string, plotStyle string, context string) string {
+	// 处理上下文参数
+	var contextStr string
+	if context != "" {
+		contextStr = ", " + context
+	}
+
+	// 处理风格参数
+	var styleStr string
+	if style != "" && style != "realistic" {
+		styleStr = style
+	}
+	if plotStyle != "" {
+		if styleStr != "" {
+			styleStr += ", " + plotStyle
+		} else {
+			styleStr = plotStyle
+		}
+	}
+
+	if p.IsEnglish() {
+		promptTemplate := `You are an experienced creative director and AI video producer. Your task is to extract and organize detailed character settings for all characters and core items appearing in the script based on the provided script content.
 
 	Requirements:
 	1. Extract all characters with names (ignore unnamed passersby or background characters) and key props important to the plot
@@ -551,7 +729,7 @@ func (p *PromptI18n) GetCharacterExtractionPromptTest(style string) string {
 	   - personality: ""
 	   - description: Role in the story and significance
 	   - age: ""
-   - gender: "other"
+	   - gender: "other"
 
 	### 1.1 Appearance Description Specification (Five-module Structure)
 
@@ -562,10 +740,10 @@ appearance =  Basic Appearance + Clothing Details + Iconic Features + Temperamen
 #### **Module Details**:
 
 **a) Style Prefix (must start with)**
-- Character format: "%s, full body portrait, white background."
+- Character format: "%s%s, full body portrait, white background."
   - **Must explicitly state**: "full body portrait" (full body image)
   - **Must explicitly state**: "white background" (white background)
-- Item format: "%s, product shot, whole object visible, white background."
+- Item format: "%s%s, product shot, whole object visible, white background."
   - **Must explicitly state**: "product shot, whole object visible" (product image, complete visible)
   - **Must explicitly state**: "white background" (white background)
 
@@ -653,7 +831,7 @@ Please organize and return all work results strictly according to the following 
     {
       "name": "Imperial Jade Seal",
       "role": "item",
-      "appearance": "{{ $('Profiler').first().json.story_artistic_style }}, product shot, whole object visible, white background. [Item Features]. [Temperament Status].",
+      "appearance": "%s%s, product shot, whole object visible, white background. [Item Features]. [Temperament Status].",
       "personality": "",
       "description": "Brief Chinese appearance description",
       "age": "",
@@ -662,17 +840,19 @@ Please organize and return all work results strictly according to the following 
     {
       "name": "Fisherman",
       "role": "main",
-      "appearance": "{{ $('Profiler').first().json.story_artistic_style }}, full body portrait, white background. [Basic Appearance]. [Clothing Details]. [Temperament Status].",
+      "appearance": "%s%s, full body portrait, white background. [Basic Appearance]. [Clothing Details]. [Temperament Status].",
       "personality": "Weathered and wise",
       "description": "Brief Chinese appearance description",
       "age": "middle-aged",
       "gender": "male"
     }
   ]
-}`, style, imageRatio)
+}`
+
+		return fmt.Sprintf(promptTemplate, styleStr, contextStr)
 	}
 
-	return fmt.Sprintf(`你是一位经验丰富的创意总监和AI视频制作人。你的任务是根据提供的剧本内容，提取并整理剧中出现的所有角色和核心道具的详细设定。
+	promptTemplate := `你是一位经验丰富的创意总监和AI视频制作人。你的任务是根据提供的剧本内容，提取并整理剧中出现的所有角色和核心道具的详细设定。
 
 要求：
 1. 提取所有有名字的角色（忽略无名路人或背景角色）和对剧情发展有重要作用的核心道具
@@ -702,36 +882,36 @@ appearance = 风格前缀 + 基础外观 + 服饰细节 + 标志性特征 + 气�
 #### **模块详解**：
 
 **a) 风格前缀（必须开头）**
-- 角色格式："%s, full body portrait, white background."
-  - **必须明确说明**："full body portrait"（全身形象）
-  - **必须明确说明**："white background"（白色背景）
-- 物品格式："%s, product shot, whole object visible, white background."
-  - **必须明确说明**："product shot, whole object visible"（产品图，完整可见）
-  - **必须明确说明**："white background"（白色背景）
+- 角色格式："%s%s, 全身形象, 白色背景."
+  - **必须明确说明**："全身形象"（完整展现角色外观）
+  - **必须明确说明**："白色背景"（确保后续分镜融合一致性）
+- 物品格式："%s%s, 产品图, 完整可见, 白色背景."
+  - **必须明确说明**："产品图, 完整可见"（展示道具完整外观）
+  - **必须明确说明**："白色背景"（确保后续分镜融合一致性）
 
 **b) 基础外观**（仅角色）
-- 性别与年龄段："A 25-year-old Asian woman"
-- 发型与发色："with shoulder-length black straight hair, slightly messy"
-- 五官特点（结构性，非表情）："deep-set eyes, thin lips, high cheekbones"
-- 体型身材："slender and tall figure"
+- 性别与年龄段："一位25岁的亚洲女性"
+- 发型与发色："留着齐肩黑色直发，略显凌乱"
+- 五官特点（结构性，非表情）："深邃的眼睛，薄嘴唇，高颧骨"
+- 体型身材："苗条高挑的身材"
 
 **c) 服饰细节**
-- 服装类型与风格："wearing a worn dark blue linen robe"
-- 颜色与材质："rough fabric texture with visible patches"
-- 服装状态："frayed sleeves and hem, several crude repairs"
-- 配饰（穿戴类）："a worn leather belt around the waist"
+- 服装类型与风格："穿着一件破旧的深蓝色亚麻长袍"
+- 颜色与材质："粗糙的织物纹理，可见补丁"
+- 服装状态："袖口和下摆磨损，有几处粗糙的修补"
+- 配饰（穿戴类）："腰间系着一条破旧的皮带"
 
 **d) 物品特征**（仅物品）
 - 外观细节：形状、材质、颜色、纹理
-- 铭文/标记：**保留中文原文**，如 "inscription '受命于天，既寿永昌' on its bottom"
-- 象征元素："dragon knob on top"
+- 铭文/标记：**保留中文原文**，如 "底部刻有'受命于天，既寿永昌'铭文"
+- 象征元素："顶部有龙形旋钮"
 - **尺寸参照 (Size Reference)**：**必须包含**。
   - 描述该物品相对于人体的物理尺寸。
-  - 示例："palm-sized object", "heavy two-handed object", "human-height statue".
+  - 示例："手掌大小的物体", "沉重的双手握持物体", "与人等高的雕像".
 
 **e) 气质状态**
-- 整体气场（稳定特质，非表情）："exuding a weathered and aloof aura"
-- ❌ 禁止："smiling", "frowning", "sad expression"（这些在分镜中描述）
+- 整体气场（稳定特质，非表情）："散发出饱经风霜且冷漠的气场"
+- ❌ 禁止："微笑", "皱眉", "悲伤的表情"（这些在分镜中描述）
 
 ### 1.2 严格禁止的元素
 
@@ -749,11 +929,11 @@ appearance = 风格前缀 + 基础外观 + 服饰细节 + 标志性特征 + 气�
 - **原因**：表情和动作会在后续分镜脚本中根据情节变化。
 
 ### 1.3 字数与质量控制
-- 英文 Appearance 长度：**50-100词**
+- 中文 Appearance 长度：**150-300字**
 - 至少包含 **2-3个** 强烈的视觉识别点
 - 所有特征应是**相对稳定、不易变化**的
 - **句式精简**：仅保留主语、核心外观词、服饰词、气质词
-- ❌ 严禁使用长难句，严禁使用 "A character showing...", "There is a..." 等废话句式
+- ❌ 严禁使用长难句，严禁使用 "一个角色表现出..."，"有一个..." 等废话句式
 
 ---
 
@@ -762,15 +942,15 @@ appearance = 风格前缀 + 基础外观 + 服饰细节 + 标志性特征 + 气�
 ### Characters 检查：
 - [ ] 提取所有有名字的角色
 - [ ] 对每个角色，包含所有必填字段
-- [ ] "image_prompt" 以风格前缀开头（full body portrait / product shot）
-- [ ] **角色必须明确说明** "full body portrait"（全身形象）
-- [ ] **必须包含** "white background"（白色背景）
-- [ ] **必须包含** "size_reference"（尺寸参照描述）
+- [ ] "image_prompt" 以风格前缀开头（全身形象 / 产品图）
+- [ ] **角色必须明确说明** "全身形象"（完整展现角色外观）
+- [ ] **必须包含** "白色背景"（确保后续分镜融合一致性）
+- [ ] **必须包含** "尺寸参照"（描述物品相对于人体的物理尺寸）
 - [ ] 无其他背景/环境/光线描述（除白色背景外）
 - [ ] 无表情/情绪/眼神描述
 - [ ] 包含 2-3 个视觉识别点
 - [ ] 中文铭文保留原文
-- [ ] 字数在 50-100 词之间
+- [ ] 字数在 150-300 字之间
 
 ---
 
@@ -793,7 +973,7 @@ appearance = 风格前缀 + 基础外观 + 服饰细节 + 标志性特征 + 气�
     {
       "name": "传国玉玺",
       "role": "item",
-      "appearance": "{{ $('Profiler').first().json.story_artistic_style }}, product shot, whole object visible, white background. [物品特征]. [气质状态].",
+      "appearance": "%s%s, 产品图, 完整可见, 白色背景. [物品特征]. [气质状态].",
       "personality": "",
       "description": "简短的中文外观描述",
       "age": "",
@@ -802,14 +982,16 @@ appearance = 风格前缀 + 基础外观 + 服饰细节 + 标志性特征 + 气�
     {
       "name": "渔夫",
       "role": "main",
-      "appearance": "{{ $('Profiler').first().json.story_artistic_style }}, full body portrait, white background. [基础外观]. [服饰细节]. [气质状态].",
+      "appearance": "%s%s, 全身形象, 白色背景. [基础外观]. [服饰细节]. [气质状态].",
       "personality": "饱经风霜且充满智慧",
       "description": "简短的中文外观描述",
-      "age": "middle-aged",
-      "gender": "male"
+      "age": "中年",
+      "gender": "男"
     }
   ]
-}`, style, imageRatio)
+}`
+
+	return fmt.Sprintf(promptTemplate, styleStr, contextStr)
 }
 
 // GetPropExtractionPrompt 获取道具提取提示词
@@ -1073,6 +1255,13 @@ func (p *PromptI18n) GetStylePrompt(style string) string {
 - **视觉流派与画面质感**：采用 **3D 盲盒艺术风格 (Blind Box / Toy Art Style)**。画面具有极强的 **类塑料与树脂质感 (Plastic and Resin texture)**，表面圆润、平滑，边缘带有微妙的倒角。主体呈现出明显的 **Q 版比例**（大头小身），增强了亲和力。
 - **色彩美学逻辑**：使用 **"温和的高饱和调色盘 (Muted Vibrant Palette)"**。色彩鲜艳但并不刺眼。色彩分布遵循"主次分明"原则，利用大面积的自然底色（如森林绿、泥土褐）衬托主体鲜明的服饰色彩。
 - **光影表现手法**：光源通常柔和且均匀。**顶光/面光**：均匀照亮主体正面，突出五官和服饰细节。**环境遮蔽 (Ambient Occlusion)**：在缝隙和接触面产生细腻的阴影，增强物体的重量感和真实感。`,
+			"喜剧": `**[专家角色定位]**
+你是一位顶尖的喜剧风格插画师，擅长创作充满幽默感和夸张表现力的图像。你的视觉风格强调色彩鲜艳、线条简洁、角色表情夸张，旨在营造轻松愉快的氛围。
+
+**[风格核心逻辑]**
+- **视觉流派与画面质感**：采用 **卡通喜剧风格 (Cartoon Comedy Style)**。画面具有明亮的色彩和简洁的线条，角色设计夸张有趣，充满幽默感。
+- **色彩美学逻辑**：使用 **"鲜艳的对比色 (Bright Contrasting Colors)"**。色彩饱和度高，对比强烈，营造出活泼、欢快的氛围。
+- **光影表现手法**：强调 **"扁平化光影 (Flat Shading)"**。光影过渡简单直接，增强画面的卡通感和幽默感。`,
 		},
 		"en": {
 			"ghibli": `**[Expert Role]**

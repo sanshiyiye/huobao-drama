@@ -81,7 +81,20 @@ func (s *ScriptGenerationService) processCharacterGeneration(taskID string, req 
 		return
 	}
 
-	systemPrompt := s.promptI18n.GetCharacterExtractionPromptTest(drama.Style)
+	// 分析剧情背景信息（从大纲或剧本中提取）
+	var context string
+	if req.Outline != "" {
+		context = s.promptI18n.AnalyzeScriptContext(req.Outline)
+	} else {
+		// 如果没有大纲，从剧本描述中提取
+		var dramaInfo string
+		if drama.Description != nil {
+			dramaInfo = *drama.Description
+		}
+		context = s.promptI18n.AnalyzeScriptContext(dramaInfo)
+	}
+
+	systemPrompt := s.promptI18n.GetCharacterExtractionPromptTest(drama.Style, drama.PlotStyle, context)
 
 	outlineText := req.Outline
 	if outlineText == "" {

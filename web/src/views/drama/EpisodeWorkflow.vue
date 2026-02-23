@@ -103,6 +103,16 @@
                     </el-button>
                     <el-button
                       size="small"
+                      class="editor-action-btn extract-action-btn"
+                      @click="openExtractStyleDialog"
+                      :loading="extractingStyle"
+                      :disabled="!hasScript"
+                    >
+                      <el-icon><MagicStick /></el-icon>
+                      提取风格
+                    </el-button>
+                    <el-button
+                      size="small"
                       class="editor-action-btn next-step-btn"
                       @click="nextStep"
                       :disabled="!hasExtractedData"
@@ -171,6 +181,10 @@
                       <el-tag v-if="currentEpisode?.scenes" type="success"
                         >{{ $t("workflow.scenes") }}:
                         {{ currentEpisode.scenes.length }}</el-tag
+                      >
+                      <el-tag v-if="drama?.style" type="success"
+                        >{{ $t("workflow.style") }}:
+                        {{ drama.style }}</el-tag
                       >
                     </div>
                   </template>
@@ -1338,6 +1352,51 @@
           </el-button>
         </template>
       </el-dialog>
+
+      <!-- 风格提取对话框 -->
+      <el-dialog
+        v-model="extractStyleDialogVisible"
+        title="提取风格"
+        width="500px"
+      >
+        <el-alert type="info" :closable="false" style="margin-bottom: 16px">
+          系统将自动分析剧本内容，提取剧情类型风格标签（如：古装、现代、科幻等）
+        </el-alert>
+
+        <el-form label-width="80px">
+          <el-form-item label="提取结果">
+            <el-input
+              v-model="extractedStyle"
+              placeholder="点击开始提取后，结果将显示在这里"
+              :disabled="extractingStyle"
+              type="textarea"
+              :rows="3"
+            />
+          </el-form-item>
+        </el-form>
+
+        <template #footer>
+          <el-button @click="extractStyleDialogVisible = false">
+            {{ $t("common.cancel") }}
+          </el-button>
+          <el-button
+            type="primary"
+            @click="handleExtractStyle"
+            :loading="extractingStyle"
+            v-if="!extractedStyle"
+          >
+            {{ $t("workflow.startExtract") }}
+          </el-button>
+          <el-button
+            type="success"
+            @click="saveExtractedStyle"
+            :loading="savingStyle"
+            v-else
+          >
+            {{ $t("common.save") }}
+          </el-button>
+        </template>
+      </el-dialog>
     </div>
   </div>
 </template>
@@ -1419,6 +1478,117 @@ const uploadDialogVisible = ref(false);
 const modelConfigDialogVisible = ref(false);
 const addSceneDialogVisible = ref(false);
 const extractScenesDialogVisible = ref(false);
+const extractStyleDialogVisible = ref(false);
+const extractingStyle = ref(false);
+const savingStyle = ref(false);
+const extractedStyle = ref("");
+
+const PRESET_STYLE_VALUES = [
+  "ghibli",
+  "guoman",
+  "wasteland",
+  "nostalgia",
+  "pixel",
+  "voxel",
+  "urban",
+  "guoman3d",
+  "chibi3d",
+];
+
+const stylePresets = [
+  { value: "ghibli", labelKey: "drama.styles.ghibli" },
+  { value: "guoman", labelKey: "drama.styles.guoman" },
+  { value: "wasteland", labelKey: "drama.styles.wasteland" },
+  { value: "nostalgia", labelKey: "drama.styles.nostalgia" },
+  { value: "pixel", labelKey: "drama.styles.pixel" },
+  { value: "voxel", labelKey: "drama.styles.voxel" },
+  { value: "urban", labelKey: "drama.styles.urban" },
+  { value: "guoman3d", labelKey: "drama.styles.guoman3d" },
+  { value: "chibi3d", labelKey: "drama.styles.chibi3d" },
+];
+
+const selectPresetStyle = (value: string) => {
+  selectedStyle.value = value;
+  customStyleInput.value = "";
+};
+
+const openExtractStyleDialog = () => {
+  extractStyleDialogVisible.value = true;
+  // 打开对话框时设置已提取的风格值
+  extractedStyle.value = drama.value?.plot_style || "";
+};
+
+const handleExtractStyle = async () => {
+  if (!currentEpisode.value?.id) {
+    ElMessage.error("章节信息不存在");
+    return;
+  }
+
+  try {
+    extractingStyle.value = true;
+    // 调用风格提取 API，AI 自动分析剧本内容
+    const response = await aiAPI.extractStyle(currentEpisode.value.id.toString());
+    // 假设 API 返回格式 { task_id, message }，需要等待任务完成
+    const taskId = response.task_id;
+    ElMessage.success("风格提取任务已提交，正在处理...");
+
+    // 轮询任务状态
+    let taskStatus = "processing";
+    let attempts = 0;
+    const maxAttempts = 30; // 最多轮询 30 次（约 30 秒）
+
+    while (taskStatus === "processing" && attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 1000)); // 每秒检查一次
+      const statusResponse = await generationAPI.getTaskStatus(taskId);
+      taskStatus = statusResponse.status;
+      attempts++;
+
+      if (taskStatus === "completed") {
+        // 任务完成，获取提取结果
+        // 从任务结果中获取风格
+        let taskResult = statusResponse.result;
+        if (typeof taskResult === 'string') {
+          taskResult = JSON.parse(taskResult);
+        }
+        extractedStyle.value = taskResult?.style || "未提取到风格";
+        ElMessage.success("风格提取完成！");
+        break;
+      } else if (taskStatus === "failed") {
+        throw new Error(statusResponse.error || "风格提取失败");
+      }
+    }
+
+    if (taskStatus === "processing") {
+      throw new Error("风格提取超时，请稍后重试");
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || "风格提取失败");
+  } finally {
+    extractingStyle.value = false;
+  }
+};
+
+const saveExtractedStyle = async () => {
+  if (!extractedStyle.value.trim()) {
+    ElMessage.warning("请输入风格信息");
+    return;
+  }
+
+  try {
+    savingStyle.value = true;
+    // 调用 API 保存风格
+    await dramaAPI.update(dramaId, { plot_style: extractedStyle.value.trim() });
+
+    ElMessage.success("风格保存成功！");
+    extractStyleDialogVisible.value = false;
+    // 刷新数据
+    await loadDramaData();
+  } catch (error: any) {
+    ElMessage.error(error.message || "保存失败");
+  } finally {
+    savingStyle.value = false;
+  }
+};
 const currentEditItem = ref<any>({ name: "" });
 const currentEditType = ref<"character" | "scene">("character");
 const editPrompt = ref("");
