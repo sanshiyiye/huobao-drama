@@ -661,7 +661,13 @@ export default {
     createFailed: '制作失败',
     allCellsRequired: '请填充所有宫格',
     replaceImage: '替换图片',
-    noImagesAvailable: '暂无图片'
+    noImagesAvailable: '暂无图片',
+    refresh: '刷新',
+    delete: '删除',
+    pending: '等待中',
+    processing: '生成中',
+    completed: '已完成',
+    failed: '失败'
   },
   video: {
     title: 'AI 视频生成',

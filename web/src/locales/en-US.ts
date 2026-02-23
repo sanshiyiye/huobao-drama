@@ -720,7 +720,14 @@ export default {
     generating: 'Generating...',
     generateImage: 'Generate Image',
     uploadImage: 'Upload Image',
-    generationResult: 'Generation Result'
+    generationResult: 'Generation Result',
+    refresh: 'Refresh',
+    delete: 'Delete',
+    preview: 'Preview',
+    pending: 'Pending',
+    processing: 'Processing',
+    completed: 'Completed',
+    failed: 'Failed'
   },
   video: {
     title: 'AI Video Generation',

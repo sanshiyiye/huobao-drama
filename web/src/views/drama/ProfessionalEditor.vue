@@ -392,194 +392,23 @@
           <!-- 图片生成标签 -->
           <el-tab-pane :label="$t('editor.shotImage')" name="image">
             <div class="tab-content" v-if="currentStoryboard">
-              <div class="image-generation-section">
-                <!-- 帧类型选择 -->
-                <div class="frame-type-selector">
-                  <div class="section-label">
-                    {{ $t("editor.selectFrameType") }}
-                  </div>
-                  <el-radio-group v-model="selectedFrameType" size="small">
-                    <el-radio-button label="first">{{
-                      $t("editor.firstFrame")
-                    }}</el-radio-button>
-                    <el-radio-button label="last">{{
-                      $t("editor.lastFrame")
-                    }}</el-radio-button>
-                    <!-- <el-radio-button label="panel">{{
-                      $t("editor.panelFrame")
-                    }}</el-radio-button> -->
-                    <el-radio-button label="action">{{
-                      $t("editor.actionSequence")
-                    }}</el-radio-button>
-                    <el-radio-button label="key">{{
-                      $t("editor.keyFrame")
-                    }}</el-radio-button>
-                  </el-radio-group>
-                  <el-input-number
-                    v-if="selectedFrameType === 'panel'"
-                    v-model="panelCount"
-                    :min="2"
-                    :max="6"
-                    size="small"
-                    class="panel-count-input"
-                    style="margin-left: 10px; margin-top: 12px"
-                  />
-                  <span
-                    v-if="selectedFrameType === 'panel'"
-                    class="panel-count-label"
-                    >{{ $t("editor.panelCount") }}</span
-                  >
-                </div>
-
-                <!-- 提示词区域 -->
-                <div class="prompt-section">
-                  <div class="section-label">
-                    {{ $t("editor.prompt") }}
-                    <el-button
-                      size="small"
-                      type="primary"
-                      :disabled="
-                        isGeneratingPrompt(
-                          currentStoryboard?.id,
-                          selectedFrameType,
-                        )
-                      "
-                      :loading="
-                        isGeneratingPrompt(
-                          currentStoryboard?.id,
-                          selectedFrameType,
-                        )
-                      "
-                      @click="extractFramePrompt"
-                      style="margin-left: 10px"
-                    >
-                      {{ $t("editor.extractPrompt") }}
-                    </el-button>
-                  </div>
-                  <el-input
-                    v-model="currentFramePrompt"
-                    type="textarea"
-                    :rows="8"
-                    :placeholder="$t('editor.promptPlaceholder')"
-                  />
-                </div>
-
-                <!-- 生成控制 -->
-                <div class="generation-controls">
-                  <el-button
-                    type="success"
-                    :icon="MagicStick"
-                    :loading="generatingImage"
-                    :disabled="!currentFramePrompt"
-                    @click="generateFrameImage"
-                  >
-                    {{
-                      generatingImage
-                        ? $t("editor.generating")
-                        : $t("editor.generateImage")
-                    }}
-                  </el-button>
-                  <el-button :icon="Upload" @click="uploadImage">{{
-                    $t("editor.uploadImage")
-                  }}</el-button>
-                </div>
-
-                <!-- 生成结果 -->
-                <div
-                  class="generation-result"
-                  v-if="
-                    generatedImages.length > 0 || selectedFrameType === 'action'
-                  "
-                >
-                  <div class="section-label">
-                    {{ $t("editor.generationResult") }} ({{
-                      generatedImages.length
-                    }})
-                  </div>
-                  <div class="image-grid">
-                    <!-- 动作序列入口按钮 -->
-                    <div
-                      v-if="selectedFrameType === 'action'"
-                      class="image-item grid-entry-button"
-                      @click="showGridEditor = true"
-                    >
-                      <div class="grid-entry-placeholder">
-                        <el-icon :size="28" style="color: #ccc">
-                          <Plus />
-                        </el-icon>
-                      </div>
-                      <!-- <div class="image-info">
-                        <span class="frame-type-tag">{{
-                          $t("editor.createGridImage")
-                          }}</span>
-                      </div> -->
-                    </div>
-                    <div
-                      v-for="img in generatedImages"
-                      :key="img.id"
-                      class="image-item-wrapper"
-                    >
-                      <div
-                        class="image-item"
-                        :class="{
-                          'action-image-item': img.frame_type === 'action',
-                        }"
-                      >
-                        <el-image
-                          v-if="hasImage(img)"
-                          :src="getImageUrl(img)"
-                          :preview-src-list="
-                            generatedImages
-                              .filter((i) => hasImage(i))
-                              .map((i) => getImageUrl(i)!)
-                          "
-                          :initial-index="
-                            generatedImages
-                              .filter((i) => i.image_url)
-                              .findIndex((i) => i.id === img.id)
-                          "
-                          fit="cover"
-                          preview-teleported
-                        />
-                        <div v-else class="image-placeholder">
-                          <el-icon :size="32">
-                            <Picture />
-                          </el-icon>
-                          <p>{{ getStatusText(img.status) }}</p>
-                        </div>
-                        <div class="image-actions" v-if="hasImage(img)">
-                          <!-- 动作序列图片裁剪图标 -->
-                          <div
-                            v-if="img.frame_type === 'action' && hasImage(img)"
-                            class="crop-icon-overlay"
-                            @click.stop="openCropDialog(img)"
-                          >
-                            <el-icon :size="18" color="var(--text-primary)">
-                              <Crop />
-                            </el-icon>
-                          </div>
-                          <div v-else></div>
-                          <!-- 删除按钮 -->
-                          <div
-                            v-if="hasImage(img)"
-                            class="delete-icon-overlay"
-                            @click.stop="handleDeleteImage(img)"
-                          >
-                            <el-icon :size="18" color="red">
-                              <DeleteFilled />
-                            </el-icon>
-                          </div>
-                        </div>
-                      </div>
-                      <!-- <div class="image-status">
-                                                <el-tag :type="getStatusType(img.status)" size="small">{{
-                                                    getStatusText(img.status)
-                                                }}</el-tag>
-                                            </div> -->
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <ImageGenerationTab
+                :current-storyboard="currentStoryboard"
+                :generated-images="generatedImages"
+                :loading-images="loadingImages"
+                :is-generating-prompt="isGeneratingPrompt(currentStoryboard?.id, selectedFrameType)"
+                :generating-image="generatingImage"
+                :selected-frame-type="selectedFrameType"
+                :current-frame-prompt="currentFramePrompt"
+                @update:current-frame-prompt="currentFramePrompt = $event"
+                @update:selected-frame-type="selectedFrameType = $event"
+                @extract-prompt="extractFramePrompt"
+                @generate-image="generateFrameImage"
+                @upload-image="uploadImage"
+                @refresh-images="loadStoryboardImages(currentStoryboard?.id, selectedFrameType)"
+                @select-image="selectImage"
+                @delete-image="handleDeleteImage"
+              />
             </div>
             <el-empty v-else description="未选择镜头" />
           </el-tab-pane>
@@ -1818,6 +1647,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import StoryboardList from "./ProfessionalEditor/components/StoryboardList.vue";
 import AudioTab from "./ProfessionalEditor/components/AudioTab.vue";
 import VideoMergeTab from "./ProfessionalEditor/components/VideoMergeTab.vue";
+import ImageGenerationTab from "./ProfessionalEditor/components/ImageGenerationTab.vue";
 import {
   ArrowLeft,
   Plus,
