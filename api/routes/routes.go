@@ -218,6 +218,24 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 			audio.POST("/extract/batch", audioExtractionHandler.BatchExtractAudio)
 		}
 
+		// 文件管理路由
+		files := api.Group("/files")
+		{
+			fileHandler := handlers2.NewFileManagementHandler(db, cfg, log, localStoragePtr)
+
+			// 图片管理
+			files.GET("/images", fileHandler.ListImages)
+			files.DELETE("/images/:filename", fileHandler.DeleteImage)
+
+			// 视频管理
+			files.GET("/videos", fileHandler.ListVideos)
+			files.DELETE("/videos/:filename", fileHandler.DeleteVideo)
+
+			// 通用文件管理
+			files.DELETE("/:path", fileHandler.DeleteFile)
+			files.POST("/cleanup", fileHandler.CleanupUnassociatedFiles)
+		}
+
 		settings := api.Group("/settings")
 		{
 			settings.GET("/language", settingsHandler.GetLanguage)

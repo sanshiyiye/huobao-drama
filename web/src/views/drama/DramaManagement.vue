@@ -22,6 +22,20 @@
         <el-tabs v-model="activeTab" class="management-tabs">
           <!-- 项目概览 -->
           <el-tab-pane :label="$t('drama.management.overview')" name="overview">
+          </el-tab-pane>
+
+          <!-- 图片管理 -->
+          <el-tab-pane :label="$t('drama.management.imageManagement')" name="images">
+            <ImageManagement />
+          </el-tab-pane>
+
+          <!-- 视频管理 -->
+          <el-tab-pane :label="$t('drama.management.videoManagement')" name="videos">
+            <VideoManagement />
+          </el-tab-pane>
+
+          <!-- 原始项目概览内容 -->
+          <el-tab-pane :label="$t('drama.management.overview')" name="overview">
             <div class="stats-grid">
               <StatCard
                 :label="$t('drama.management.episodeStats')"
@@ -896,6 +910,8 @@ import {
   ImagePreview,
 } from "@/components/common";
 import { getImageUrl, hasImage } from "@/utils/image";
+import ImageManagement from "./components/ImageManagement.vue";
+import VideoManagement from "./components/VideoManagement.vue";
 
 const router = useRouter();
 const route = useRoute();
