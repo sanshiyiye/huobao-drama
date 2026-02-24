@@ -53,16 +53,12 @@
       </div>
 
       <!-- 右侧编辑面板 -->
-      <div class="edit-panel">
-        <el-tabs v-model="activeTab" class="edit-tabs">
-          <!-- 镜头图片标签：图标 + 文案 -->
-          <el-tab-pane name="image">
-            <template #label>
-              <span class="edit-tab-label">
-                <el-icon><Picture /></el-icon>
-                <span>{{ $t('editor.shotImage') }}</span>
-              </span>
-            </template>
+      <EditPanel
+        :active-tab="activeTab"
+        :show-audio-tab="!!currentModelCapability?.supportAudio"
+        @update:active-tab="activeTab = $event"
+      >
+        <template #image-tab>
             <div class="tab-content" v-if="currentStoryboard">
               <ImageGenerationTab
                 :current-storyboard="currentStoryboard"
@@ -92,16 +88,8 @@
               />
             </div>
             <el-empty v-else description="未选择镜头" />
-          </el-tab-pane>
-
-          <!-- 视频生成标签：图标 + 文案 -->
-          <el-tab-pane name="video">
-            <template #label>
-              <span class="edit-tab-label">
-                <el-icon><VideoPlay /></el-icon>
-                <span>{{ $t('video.videoGeneration') }}</span>
-              </span>
-            </template>
+        </template>
+        <template #video-tab>
             <div class="tab-content" v-if="currentStoryboard">
               <div class="video-generation-section">
                 <!-- 优先选择：模型、参考图、时长 -->
@@ -1233,21 +1221,13 @@
               </div>
             </div>
             <el-empty v-else description="未选择镜头" />
-          </el-tab-pane>
-
-          <!-- 音效与配乐标签 -->
-          <el-tab-pane
-            v-if="currentModelCapability?.supportAudio"
-            :label="$t('video.soundAndMusicTab')"
-            name="audio"
-          >
+        </template>
+        <template #audio-tab>
             <div class="tab-content">
               <AudioTab />
             </div>
-          </el-tab-pane>
-
-          <!-- 视频合成列表标签 -->
-          <el-tab-pane :label="$t('video.videoMerge')" name="merges">
+        </template>
+        <template #merges-tab>
             <div class="tab-content">
               <VideoMergeTab
                 :video-merged="videoMerges"
@@ -1258,9 +1238,8 @@
                 @createMerge="createMerge"
               />
             </div>
-          </el-tab-pane>
-        </el-tabs>
-      </div>
+        </template>
+      </EditPanel>
     </div>
 
     <!-- 角色选择器对话框 -->
@@ -1519,6 +1498,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import StoryboardList from "./ProfessionalEditor/components/StoryboardList.vue";
+import EditPanel from "./ProfessionalEditor/components/EditPanel.vue";
 import AudioTab from "./ProfessionalEditor/components/AudioTab.vue";
 import VideoMergeTab from "./ProfessionalEditor/components/VideoMergeTab.vue";
 import ImageGenerationTab from "./ProfessionalEditor/components/ImageGenerationTab.vue";
