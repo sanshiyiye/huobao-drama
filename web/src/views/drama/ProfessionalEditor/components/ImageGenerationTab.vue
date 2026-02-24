@@ -1,53 +1,88 @@
 <template>
   <div class="image-generation-tab">
-    <!-- 帧类型选择 -->
-    <div class="frame-type-selector">
-      <el-radio-group v-model="internalSelectedFrameType" size="small" @change="handleFrameTypeChange">
-        <el-radio-button label="first">{{ $t("editor.firstFrame") }}</el-radio-button>
-        <el-radio-button label="key">{{ $t("editor.keyFrame") }}</el-radio-button>
-        <el-radio-button label="last">{{ $t("editor.lastFrame") }}</el-radio-button>
-        <el-radio-button label="panel">{{ $t("editor.panelFrame") }}</el-radio-button>
-        <el-radio-button label="action">{{ $t("editor.actionSequence") }}</el-radio-button>
-      </el-radio-group>
+    <!-- 镜头上下文信息 -->
+    <ShotContextTab
+      :current-storyboard="currentStoryboard"
+      :characters="characters"
+      :props="propsData"
+      @toggle-character="handleToggleCharacter"
+      @toggle-prop="handleToggleProp"
+      @show-scene-selector="handleShowSceneSelector"
+      @show-scene-image="handleShowSceneImage"
+      @show-character-selector="handleShowCharacterSelector"
+      @show-character-image="handleShowCharacterImage"
+      @show-prop-selector="handleShowPropSelector"
+    />
+
+    <!-- 镜头类型 -->
+    <div class="prompt-block-section">
+      <div class="section-label">
+        <span class="section-title">{{ $t('editor.frameTypeLabel') }}</span>
+      </div>
+      <div class="frame-type-block">
+        <el-radio-group v-model="internalSelectedFrameType" size="small" @change="handleFrameTypeChange" class="frame-type-group">
+          <el-radio-button label="first">{{ $t("editor.firstFrame") }}</el-radio-button>
+          <el-radio-button label="key">{{ $t("editor.keyFrame") }}</el-radio-button>
+          <el-radio-button label="last">{{ $t("editor.lastFrame") }}</el-radio-button>
+          <el-radio-button label="panel">{{ $t("editor.panelFrame") }}</el-radio-button>
+          <el-radio-button label="action">{{ $t("editor.actionSequence") }}</el-radio-button>
+        </el-radio-group>
+      </div>
     </div>
 
-    <!-- 提示词输入 -->
-    <div class="prompt-input-section">
-      <div class="section-header">
-        <span>{{ $t('editor.prompt') }}</span>
+    <!-- 提示词编辑 -->
+    <div class="prompt-block-section prompt-editing-section">
+      <div class="prompt-section-header">
+        <span class="section-title">{{ $t('editor.promptEditing') }}</span>
+        <span v-if="internalCurrentFramePrompt?.trim()" class="prompt-status generated">
+          <el-icon><CircleCheckFilled /></el-icon>
+          {{ $t('editor.promptGenerated') }}
+        </span>
         <el-button
           size="small"
           :loading="isGeneratingPrompt"
           @click="handleExtractPrompt"
           :disabled="!currentStoryboard"
+          class="regenerate-btn"
         >
-          {{ $t('editor.extractPrompt') }}
+          <el-icon><Refresh /></el-icon>
+          {{ internalCurrentFramePrompt?.trim() ? $t('editor.regeneratePrompt') : $t('editor.extractPrompt') }}
         </el-button>
       </div>
-      <el-input
-        v-model="internalCurrentFramePrompt"
-        type="textarea"
-        :rows="5"
-        :placeholder="$t('editor.promptPlaceholder')"
-      />
+      <div class="prompt-text-block">
+        <el-input
+          v-model="internalCurrentFramePrompt"
+          type="textarea"
+          :rows="6"
+          :placeholder="$t('editor.promptPlaceholder')"
+          class="prompt-textarea"
+          resize="vertical"
+        />
+        <div class="prompt-hint">
+          <el-icon class="hint-icon"><InfoFilled /></el-icon>
+          <span>{{ $t('editor.promptHint') }}</span>
+        </div>
+      </div>
     </div>
 
-    <!-- 图片生成控制 -->
+    <!-- 图片生成控制：等大、并排、配色均衡 -->
     <div class="generate-controls">
       <el-button
-        type="primary"
+        class="gen-btn gen-btn-primary"
         :loading="generatingImage"
         @click="handleGenerateImage"
         :disabled="!currentStoryboard || !internalCurrentFramePrompt"
       >
-        {{ generatingImage ? $t('editor.generating') : $t('editor.generateImage') }}
+        <el-icon class="gen-btn-icon"><Picture /></el-icon>
+        <span class="gen-btn-text">{{ generatingImage ? $t('editor.generating') : $t('editor.generateImage') }}</span>
       </el-button>
       <el-button
-        size="small"
+        class="gen-btn gen-btn-secondary"
         @click="handleUploadImage"
         :disabled="!currentStoryboard"
       >
-        {{ $t('editor.uploadImage') }}
+        <el-icon class="gen-btn-icon"><Upload /></el-icon>
+        <span class="gen-btn-text">{{ $t('editor.uploadImage') }}</span>
       </el-button>
     </div>
 
@@ -121,7 +156,8 @@
 import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, CircleCheckFilled, InfoFilled, Picture, Upload } from '@element-plus/icons-vue'
+import ShotContextTab from './ShotContextTab.vue'
 
 interface ImageGenerationTabProps {
   currentStoryboard?: any
@@ -131,6 +167,8 @@ interface ImageGenerationTabProps {
   generatingImage?: boolean
   selectedFrameType?: string
   currentFramePrompt?: string
+  characters?: any[]
+  props?: any[]
 }
 
 interface ImageGenerationTabEmits {
@@ -142,6 +180,13 @@ interface ImageGenerationTabEmits {
   (e: 'refreshImages'): void
   (e: 'selectImage', image: any): void
   (e: 'deleteImage', image: any): void
+  (e: 'toggleCharacter', charId: number): void
+  (e: 'toggleProp', propId: number): void
+  (e: 'showSceneSelector'): void
+  (e: 'showSceneImage'): void
+  (e: 'showCharacterSelector'): void
+  (e: 'showCharacterImage', char: any): void
+  (e: 'showPropSelector'): void
 }
 
 const props = defineProps<ImageGenerationTabProps>()
@@ -157,6 +202,37 @@ const previewPrompt = ref('')
 // 内部状态与props同步
 const internalSelectedFrameType = ref(props.selectedFrameType || 'first')
 const internalCurrentFramePrompt = ref(props.currentFramePrompt || '')
+const characters = ref(props.characters || [])
+const propsData = ref(props.props || [])
+
+// ShotContextTab 事件处理方法
+const handleToggleCharacter = (charId: number) => {
+  emit('toggleCharacter', charId)
+}
+
+const handleToggleProp = (propId: number) => {
+  emit('toggleProp', propId)
+}
+
+const handleShowSceneSelector = () => {
+  emit('showSceneSelector')
+}
+
+const handleShowSceneImage = () => {
+  emit('showSceneImage')
+}
+
+const handleShowCharacterSelector = () => {
+  emit('showCharacterSelector')
+}
+
+const handleShowCharacterImage = (char: any) => {
+  emit('showCharacterImage', char)
+}
+
+const handleShowPropSelector = () => {
+  emit('showPropSelector')
+}
 const isGeneratingPrompt = ref(props.isGeneratingPrompt || false)
 const generatingImage = ref(props.generatingImage || false)
 const generatedImages = ref(props.generatedImages || [])
@@ -276,20 +352,128 @@ const getStatusText = (status: string) => {
 
 <style scoped>
 .image-generation-tab {
-  padding: 20px;
+  padding: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
 
-.frame-type-selector {
+/* 镜头类型 + 提示词编辑 统一区块 */
+.prompt-block-section {
+  margin-bottom: 4px;
+}
+
+.prompt-block-section .section-label {
   margin-bottom: 10px;
 }
 
-.prompt-input-section {
+.prompt-block-section .section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.frame-type-block {
+  background: var(--bg-card);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.frame-type-group {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.frame-type-group :deep(.el-radio-button__inner) {
+  background: var(--bg-secondary);
+  border-color: var(--border-primary);
+  color: var(--text-primary);
+}
+.frame-type-group :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-inverse);
+}
+.frame-type-group :deep(.el-radio-button__inner:hover) {
+  color: var(--accent);
+}
+
+/* 提示词编辑区块 */
+.prompt-editing-section {
   flex: 1;
-  min-height: 200px;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+}
+
+.prompt-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.prompt-section-header .section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.prompt-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+.prompt-status.generated {
+  color: var(--success, #67c23a);
+}
+
+.prompt-section-header .regenerate-btn {
+  margin-left: auto;
+  color: var(--text-secondary);
+}
+.prompt-section-header .regenerate-btn:hover {
+  color: var(--accent);
+}
+
+.prompt-text-block {
+  background: var(--bg-card);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  padding: 12px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.prompt-textarea :deep(.el-textarea__inner) {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  color: var(--text-primary);
+}
+.prompt-textarea :deep(.el-textarea__inner::placeholder) {
+  color: var(--text-muted);
+}
+
+.prompt-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.prompt-hint .hint-icon {
+  font-size: 14px;
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .section-header {
@@ -298,12 +482,63 @@ const getStatusText = (status: string) => {
   align-items: center;
   margin-bottom: 10px;
   font-weight: 500;
+  color: var(--text-primary);
 }
 
 .generate-controls {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 20px;
+}
+
+.gen-btn {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  transition: opacity 0.2s, transform 0.15s;
+}
+.gen-btn:not(:disabled):hover {
+  opacity: 0.92;
+}
+.gen-btn:not(:disabled):active {
+  transform: scale(0.98);
+}
+.gen-btn-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.gen-btn-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gen-btn-primary {
+  background: linear-gradient(135deg, var(--accent) 0%, #7c6cf5 100%);
+  color: var(--text-inverse, #fff);
+}
+.gen-btn-primary:disabled {
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+}
+
+.gen-btn-secondary {
+  background: linear-gradient(135deg, #6b5bcd 0%, #5a4bb5 100%);
+  color: var(--text-inverse, #fff);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+.gen-btn-secondary:disabled {
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  border-color: var(--border-primary);
 }
 
 .images-list {
@@ -324,16 +559,16 @@ const getStatusText = (status: string) => {
 
 .image-item {
   position: relative;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--border-primary);
   border-radius: 8px;
   overflow: hidden;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .image-item:hover {
-  border-color: #409eff;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  border-color: var(--accent);
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.15);
 }
 
 .image-item img {
@@ -348,8 +583,8 @@ const getStatusText = (status: string) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: #f5f7fa;
-  color: #909399;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
   font-size: 12px;
 }
 
@@ -357,8 +592,8 @@ const getStatusText = (status: string) => {
   position: absolute;
   top: 10px;
   left: 10px;
-  background-color: rgba(0, 0, 0, 0.6);
-  color: white;
+  background: rgba(0, 0, 0, 0.6);
+  color: var(--text-inverse, #fff);
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 12px;
@@ -368,7 +603,7 @@ const getStatusText = (status: string) => {
   display: flex;
   justify-content: space-between;
   padding: 8px;
-  background-color: #f8f9fa;
+  background: var(--bg-secondary);
 }
 
 .image-actions .el-button {
@@ -392,6 +627,6 @@ const getStatusText = (status: string) => {
   align-items: center;
   justify-content: center;
   min-height: 400px;
-  color: #909399;
+  color: var(--text-muted);
 }
 </style>

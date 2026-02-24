@@ -54,343 +54,14 @@
       <!-- 右侧编辑面板 -->
       <div class="edit-panel">
         <el-tabs v-model="activeTab" class="edit-tabs">
-          <!-- 镜头属性标签 -->
-          <el-tab-pane
-            :label="$t('storyboard.shotProperties')"
-            name="shot"
-            v-if="currentStoryboard"
-          >
-            <div v-if="currentStoryboard" class="shot-editor-new">
-              <!-- 场景(Scene) -->
-              <div class="scene-section">
-                <div class="section-label">
-                  {{ $t("storyboard.scene") }} (Scene)
-                  <el-button
-                    size="small"
-                    text
-                    @click="showSceneSelector = true"
-                    >{{ $t("storyboard.selectScene") }}</el-button
-                  >
-                </div>
-                <div
-                  class="scene-preview"
-                  v-if="hasImage(currentStoryboard.background)"
-                  @click="showSceneImage"
-                >
-                  <img
-                    :src="getImageUrl(currentStoryboard.background)"
-                    alt="场景"
-                    style="cursor: pointer"
-                  />
-                  <div class="scene-info">
-                    <div>
-                      {{ currentStoryboard.background.location }} ·
-                      {{ currentStoryboard.background.time }}
-                    </div>
-                    <div class="scene-id">
-                      {{ $t("editor.sceneId") }}:
-                      {{ currentStoryboard.scene_id || "N/A" }}
-                    </div>
-                  </div>
-                </div>
-                <div class="scene-preview-empty" v-else>
-                  <el-icon :size="48" color="#666">
-                    <Picture />
-                  </el-icon>
-                  <div>
-                    {{
-                      currentStoryboard.background
-                        ? $t("editor.sceneGenerating")
-                        : $t("editor.noBackground")
-                    }}
-                  </div>
-                </div>
-              </div>
-
-              <!-- 登场角色(Cast) -->
-              <div class="cast-section">
-                <div class="section-label">
-                  {{ $t("editor.cast") }} (Cast)
-                  <el-button
-                    size="small"
-                    text
-                    :icon="Plus"
-                    @click="showCharacterSelector = true"
-                    >{{ $t("editor.addCharacter") }}</el-button
-                  >
-                </div>
-                <div class="cast-list">
-                  <div
-                    v-for="char in currentStoryboardCharacters"
-                    :key="char.id"
-                    class="cast-item active"
-                  >
-                    <div class="cast-avatar" @click="showCharacterImage(char)">
-                      <img
-                        v-if="hasImage(char)"
-                        :src="getImageUrl(char)"
-                        :alt="char.name"
-                      />
-                      <span v-else>{{ char.name?.[0] || "?" }}</span>
-                    </div>
-                    <div class="cast-name">{{ char.name }}</div>
-                    <div
-                      class="cast-remove"
-                      @click.stop="toggleCharacterInShot(char.id)"
-                      :title="$t('editor.removeCharacter')"
-                    >
-                      <el-icon :size="14">
-                        <Close />
-                      </el-icon>
-                    </div>
-                  </div>
-                  <div
-                    v-if="
-                      !currentStoryboard?.characters ||
-                      currentStoryboard.characters.length === 0
-                    "
-                    class="cast-empty"
-                  >
-                    {{ $t("editor.noCharacters") }}
-                  </div>
-                </div>
-              </div>
-
-              <!-- 道具(Props) -->
-              <div class="cast-section">
-                <div class="section-label">
-                  {{ $t("editor.props") }} (Props)
-                  <el-button
-                    size="small"
-                    text
-                    :icon="Plus"
-                    @click="showPropSelector = true"
-                    >{{ $t("editor.addProp") }}</el-button
-                  >
-                </div>
-                <div class="cast-list">
-                  <div
-                    v-for="prop in currentStoryboardProps"
-                    :key="prop.id"
-                    class="cast-item active"
-                  >
-                    <div class="cast-avatar">
-                      <img
-                        v-if="hasImage(prop)"
-                        :src="getImageUrl(prop)"
-                        :alt="prop.name"
-                      />
-                      <el-icon v-else>
-                        <Box />
-                      </el-icon>
-                    </div>
-                    <div class="cast-name">{{ prop.name }}</div>
-                    <div
-                      class="cast-remove"
-                      @click.stop="togglePropInShot(prop.id)"
-                      title="移除道具"
-                    >
-                      <el-icon :size="14">
-                        <Close />
-                      </el-icon>
-                    </div>
-                  </div>
-                  <div
-                    v-if="
-                      !currentStoryboardProps ||
-                      currentStoryboardProps.length === 0
-                    "
-                    class="cast-empty"
-                  >
-                    {{ $t("editor.noProps") }}
-                  </div>
-                </div>
-              </div>
-
-              <!-- 视效设置 -->
-              <div class="settings-section">
-                <div class="section-label">
-                  {{ $t("editor.visualSettings") }}
-                </div>
-                <div class="settings-grid">
-                  <div class="setting-item">
-                    <label>{{ $t("editor.shotType") }}</label>
-                    <el-select
-                      v-model="currentStoryboard.shot_type"
-                      clearable
-                      :placeholder="$t('editor.shotTypePlaceholder')"
-                      @change="saveStoryboardField('shot_type')"
-                    >
-                      <el-option label="大远景" value="大远景" />
-                      <el-option label="远景" value="远景" />
-                      <el-option label="全景" value="全景" />
-                      <el-option label="中全景" value="中全景" />
-                      <el-option label="中景" value="中景" />
-                      <el-option label="中近景" value="中近景" />
-                      <el-option label="近景" value="近景" />
-                      <el-option label="特写" value="特写" />
-                      <el-option label="大特写" value="大特写" />
-                    </el-select>
-                  </div>
-
-                  <div class="setting-item">
-                    <label>{{ $t("editor.movement") }}</label>
-                    <el-select
-                      v-model="currentStoryboard.movement"
-                      clearable
-                      :placeholder="$t('editor.movementPlaceholder')"
-                      @change="saveStoryboardField('movement')"
-                    >
-                      <el-option label="固定镜头" value="固定镜头" />
-                      <el-option label="推镜" value="推镜" />
-                      <el-option label="拉镜" value="拉镜" />
-                      <el-option label="摇镜" value="摇镜" />
-                      <el-option label="移镜" value="移镜" />
-                      <el-option label="跟镜" value="跟镜" />
-                      <el-option label="升降镜头" value="升降镜头" />
-                      <el-option label="环绕" value="环绕" />
-                      <el-option label="甩镜" value="甩镜" />
-                      <el-option label="变焦" value="变焦" />
-                      <el-option label="手持晃动" value="手持晃动" />
-                      <el-option label="稳定器运动" value="稳定器运动" />
-                      <el-option label="轨道推拉" value="轨道推拉" />
-                      <el-option label="航拍" value="航拍" />
-                    </el-select>
-                  </div>
-
-                  <div class="setting-item">
-                    <label>{{ $t("editor.angle") }}</label>
-                    <el-select
-                      v-model="currentStoryboard.angle"
-                      clearable
-                      :placeholder="$t('editor.anglePlaceholder')"
-                      @change="saveStoryboardField('angle')"
-                    >
-                      <el-option label="平视" value="平视" />
-                      <el-option label="俯视" value="俯视" />
-                      <el-option label="仰视" value="仰视" />
-                      <el-option
-                        label="大俯视（鸟瞰）"
-                        value="大俯视（鸟瞰）"
-                      />
-                      <el-option label="大仰视" value="大仰视" />
-                      <el-option label="正侧面" value="正侧面" />
-                      <el-option label="斜侧面" value="斜侧面" />
-                      <el-option label="背面" value="背面" />
-                      <el-option
-                        label="倾斜（荷兰角）"
-                        value="倾斜（荷兰角）"
-                      />
-                      <el-option label="主观视角" value="主观视角" />
-                      <el-option label="过肩" value="过肩" />
-                    </el-select>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 叙事内容 -->
-              <div class="narrative-section">
-                <div class="section-label">
-                  {{ $t("editor.action") }} (Action)
-                </div>
-                <el-input
-                  v-model="currentStoryboard.action"
-                  type="textarea"
-                  :rows="3"
-                  :placeholder="$t('editor.actionPlaceholder')"
-                  @blur="saveStoryboardField('action')"
-                />
-              </div>
-
-              <div class="narrative-section">
-                <div class="section-label">
-                  {{ $t("editor.result") }} (Result)
-                </div>
-                <el-input
-                  v-model="currentStoryboard.result"
-                  type="textarea"
-                  :rows="2"
-                  :placeholder="$t('editor.resultPlaceholder')"
-                  @blur="saveStoryboardField('result')"
-                />
-              </div>
-
-              <div class="dialogue-section">
-                <div class="section-label">
-                  {{ $t("editor.dialogue") }} (Dialogue)
-                </div>
-                <el-input
-                  v-model="currentStoryboard.dialogue"
-                  type="textarea"
-                  :rows="3"
-                  :placeholder="$t('editor.dialoguePlaceholder')"
-                  @blur="saveStoryboardField('dialogue')"
-                />
-              </div>
-
-              <div class="narrative-section">
-                <div class="section-label">
-                  {{ $t("editor.description") }} (Description)
-                </div>
-                <el-input
-                  v-model="currentStoryboard.description"
-                  type="textarea"
-                  :rows="3"
-                  :placeholder="$t('editor.descriptionPlaceholder')"
-                  @blur="saveStoryboardField('description')"
-                />
-              </div>
-
-              <!-- 音效设置 -->
-              <div class="settings-section">
-                <div class="section-label">{{ $t("editor.soundEffects") }}</div>
-                <div class="audio-controls">
-                  <el-input
-                    v-model="currentStoryboard.sound_effect"
-                    :placeholder="$t('editor.soundEffectsPlaceholder')"
-                    size="small"
-                    type="textarea"
-                    :rows="2"
-                    @blur="saveStoryboardField('sound_effect')"
-                  />
-                </div>
-              </div>
-
-              <!-- 配乐设置 -->
-              <div class="settings-section">
-                <div class="section-label">{{ $t("editor.bgmPrompt") }}</div>
-                <div class="audio-controls">
-                  <el-input
-                    v-model="currentStoryboard.bgm_prompt"
-                    :placeholder="$t('editor.bgmPromptPlaceholder')"
-                    size="small"
-                    type="textarea"
-                    :rows="2"
-                    @blur="saveStoryboardField('bgm_prompt')"
-                  />
-                </div>
-              </div>
-
-              <!-- 氛围设置 -->
-              <div class="settings-section">
-                <div class="section-label">{{ $t("editor.atmosphere") }}</div>
-                <div class="audio-controls">
-                  <el-input
-                    v-model="currentStoryboard.atmosphere"
-                    :placeholder="$t('editor.atmospherePlaceholder')"
-                    size="small"
-                    type="textarea"
-                    :rows="2"
-                    @blur="saveStoryboardField('atmosphere')"
-                  />
-                </div>
-              </div>
-            </div>
-            <el-empty v-else :description="$t('editor.noShotSelected')" />
-          </el-tab-pane>
-
-          <!-- 图片生成标签 -->
-          <el-tab-pane :label="$t('editor.shotImage')" name="image">
+          <!-- 镜头图片标签：图标 + 文案 -->
+          <el-tab-pane name="image">
+            <template #label>
+              <span class="edit-tab-label">
+                <el-icon><Picture /></el-icon>
+                <span>{{ $t('editor.shotImage') }}</span>
+              </span>
+            </template>
             <div class="tab-content" v-if="currentStoryboard">
               <ImageGenerationTab
                 :current-storyboard="currentStoryboard"
@@ -400,8 +71,17 @@
                 :generating-image="generatingImage"
                 :selected-frame-type="selectedFrameType"
                 :current-frame-prompt="currentFramePrompt"
+                :characters="characters"
+                :props="props"
                 @update:current-frame-prompt="currentFramePrompt = $event"
                 @update:selected-frame-type="selectedFrameType = $event"
+                @toggle-character="toggleCharacterInShot"
+                @toggle-prop="togglePropInShot"
+                @show-scene-selector="showSceneSelector = true"
+                @show-scene-image="showSceneImage"
+                @show-character-selector="showCharacterSelector = true"
+                @show-character-image="showCharacterImage"
+                @show-prop-selector="showPropSelector = true"
                 @extract-prompt="extractFramePrompt"
                 @generate-image="generateFrameImage"
                 @upload-image="uploadImage"
@@ -413,16 +93,17 @@
             <el-empty v-else description="未选择镜头" />
           </el-tab-pane>
 
-          <!-- 视频生成标签 -->
-          <el-tab-pane :label="$t('video.videoGeneration')" name="video">
+          <!-- 视频生成标签：图标 + 文案 -->
+          <el-tab-pane name="video">
+            <template #label>
+              <span class="edit-tab-label">
+                <el-icon><VideoPlay /></el-icon>
+                <span>{{ $t('video.videoGeneration') }}</span>
+              </span>
+            </template>
             <div class="tab-content" v-if="currentStoryboard">
               <div class="video-generation-section">
-                <!-- 生成提示词展示 -->
-                <div class="video-prompt-box">
-                  {{ currentStoryboard.video_prompt || "暂无提示词" }}
-                </div>
-
-                <!-- 视频参数设置 -->
+                <!-- 优先选择：模型、参考图、时长 -->
                 <div class="video-params-section">
                   <div class="param-row">
                     <span class="param-label">{{ $t("video.model") }}</span>
@@ -460,6 +141,20 @@
                               type="primary"
                               style="margin-left: 4px"
                               >首尾帧</el-tag
+                            >
+                            <el-tag
+                              v-if="model.supportAudio"
+                              size="small"
+                              type="info"
+                              style="margin-left: 4px"
+                              >有声</el-tag
+                            >
+                            <el-tag
+                              v-if="model.supportMultipleReferences"
+                              size="small"
+                              type="warning"
+                              style="margin-left: 4px"
+                              >多参考</el-tag
                             >
                             <el-tag
                               size="small"
@@ -1258,6 +953,168 @@
                   </div>
                 </div>
 
+                <!-- 生成提示词展示 -->
+                <div class="video-prompt-box">
+                  {{ currentStoryboard.video_prompt || "暂无提示词" }}
+                </div>
+
+                <!-- 视效设置 -->
+                <div class="settings-section">
+                  <div class="section-label">
+                    {{ $t("editor.visualSettings") }}
+                  </div>
+                  <div class="settings-grid">
+                    <div class="setting-item">
+                      <label>{{ $t("editor.shotType") }}</label>
+                      <el-select
+                        v-model="currentStoryboard.shot_type"
+                        clearable
+                        :placeholder="$t('editor.shotTypePlaceholder')"
+                        @change="saveStoryboardField('shot_type')"
+                      >
+                        <el-option label="大远景" value="大远景" />
+                        <el-option label="远景" value="远景" />
+                        <el-option label="全景" value="全景" />
+                        <el-option label="中全景" value="中全景" />
+                        <el-option label="中景" value="中景" />
+                        <el-option label="中近景" value="中近景" />
+                        <el-option label="近景" value="近景" />
+                        <el-option label="特写" value="特写" />
+                        <el-option label="大特写" value="大特写" />
+                      </el-select>
+                    </div>
+
+                    <div class="setting-item">
+                      <label>{{ $t("editor.movement") }}</label>
+                      <el-select
+                        v-model="currentStoryboard.movement"
+                        clearable
+                        :placeholder="$t('editor.movementPlaceholder')"
+                        @change="saveStoryboardField('movement')"
+                      >
+                        <el-option label="固定镜头" value="固定镜头" />
+                        <el-option label="推镜" value="推镜" />
+                        <el-option label="拉镜" value="拉镜" />
+                        <el-option label="摇镜" value="摇镜" />
+                        <el-option label="移镜" value="移镜" />
+                        <el-option label="跟镜" value="跟镜" />
+                        <el-option label="升降镜头" value="升降镜头" />
+                        <el-option label="环绕" value="环绕" />
+                        <el-option label="甩镜" value="甩镜" />
+                        <el-option label="变焦" value="变焦" />
+                        <el-option label="手持晃动" value="手持晃动" />
+                        <el-option label="稳定器运动" value="稳定器运动" />
+                        <el-option label="轨道推拉" value="轨道推拉" />
+                        <el-option label="航拍" value="航拍" />
+                      </el-select>
+                    </div>
+
+                    <div class="setting-item">
+                      <label>{{ $t("editor.angle") }}</label>
+                      <el-select
+                        v-model="currentStoryboard.angle"
+                        clearable
+                        :placeholder="$t('editor.anglePlaceholder')"
+                        @change="saveStoryboardField('angle')"
+                      >
+                        <el-option label="平视" value="平视" />
+                        <el-option label="俯视" value="俯视" />
+                        <el-option label="仰视" value="仰视" />
+                        <el-option
+                          label="大俯视（鸟瞰）"
+                          value="大俯视（鸟瞰）"
+                        />
+                        <el-option label="大仰视" value="大仰视" />
+                        <el-option label="正侧面" value="正侧面" />
+                        <el-option label="斜侧面" value="斜侧面" />
+                        <el-option label="背面" value="背面" />
+                        <el-option
+                          label="倾斜（荷兰角）"
+                          value="倾斜（荷兰角）"
+                        />
+                        <el-option label="主观视角" value="主观视角" />
+                        <el-option label="过肩" value="过肩" />
+                      </el-select>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 音效设置 -->
+                <div class="settings-section">
+                  <div class="section-label">{{ $t("editor.soundEffects") }}</div>
+                  <div class="audio-controls">
+                    <el-input
+                      v-model="currentStoryboard.sound_effect"
+                      :placeholder="$t('editor.soundEffectsPlaceholder')"
+                      size="small"
+                      type="textarea"
+                      :rows="2"
+                      @blur="saveStoryboardField('sound_effect')"
+                    />
+                  </div>
+                </div>
+
+                <!-- 配乐设置 -->
+                <div class="settings-section">
+                  <div class="section-label">{{ $t("editor.bgmPrompt") }}</div>
+                  <div class="audio-controls">
+                    <el-input
+                      v-model="currentStoryboard.bgm_prompt"
+                      :placeholder="$t('editor.bgmPromptPlaceholder')"
+                      size="small"
+                      type="textarea"
+                      :rows="2"
+                      @blur="saveStoryboardField('bgm_prompt')"
+                    />
+                  </div>
+                </div>
+
+                <!-- 对话设置 -->
+                <div class="settings-section">
+                  <div class="section-label">{{ $t("editor.dialogue") }}</div>
+                  <div class="audio-controls">
+                    <el-input
+                      v-model="currentStoryboard.dialogue"
+                      :placeholder="$t('editor.dialoguePlaceholder')"
+                      size="small"
+                      type="textarea"
+                      :rows="3"
+                      @blur="saveStoryboardField('dialogue')"
+                    />
+                  </div>
+                </div>
+
+                <!-- 旁白设置 -->
+                <div class="settings-section">
+                  <div class="section-label">{{ $t("editor.description") }}</div>
+                  <div class="audio-controls">
+                    <el-input
+                      v-model="currentStoryboard.description"
+                      :placeholder="$t('editor.descriptionPlaceholder')"
+                      size="small"
+                      type="textarea"
+                      :rows="3"
+                      @blur="saveStoryboardField('description')"
+                    />
+                  </div>
+                </div>
+
+                <!-- 氛围设置 -->
+                <div class="settings-section">
+                  <div class="section-label">{{ $t("editor.atmosphere") }}</div>
+                  <div class="audio-controls">
+                    <el-input
+                      v-model="currentStoryboard.atmosphere"
+                      :placeholder="$t('editor.atmospherePlaceholder')"
+                      size="small"
+                      type="textarea"
+                      :rows="2"
+                      @blur="saveStoryboardField('atmosphere')"
+                    />
+                  </div>
+                </div>
+
+
                 <!-- 生成控制 -->
                 <div
                   class="generation-controls"
@@ -1797,6 +1654,8 @@ interface VideoModelCapability {
   supportFirstLastFrame: boolean; // 支持首尾帧
   supportSingleImage: boolean; // 支持单图
   supportTextOnly: boolean; // 支持纯文本
+  supportAudio: boolean; // 支持音频
+  supportMultipleReferences: boolean; // 支持多参考图
   maxImages: number; // 最多支持几张图片
 }
 
@@ -1810,6 +1669,8 @@ const defaultModelCapabilities: Record<
     supportMultipleImages: false,
     supportFirstLastFrame: false,
     supportTextOnly: true,
+    supportAudio: false,
+    supportMultipleReferences: false,
     maxImages: 1,
   },
   runway: {
@@ -1817,6 +1678,8 @@ const defaultModelCapabilities: Record<
     supportMultipleImages: false,
     supportFirstLastFrame: true,
     supportTextOnly: true,
+    supportAudio: false,
+    supportMultipleReferences: true,
     maxImages: 2,
   },
   pika: {
@@ -1824,6 +1687,8 @@ const defaultModelCapabilities: Record<
     supportMultipleImages: true,
     supportFirstLastFrame: false,
     supportTextOnly: true,
+    supportAudio: false,
+    supportMultipleReferences: true,
     maxImages: 6,
   },
   "doubao-seedance-1-5-pro-251215": {
@@ -1831,6 +1696,8 @@ const defaultModelCapabilities: Record<
     supportMultipleImages: false,
     supportFirstLastFrame: true,
     supportTextOnly: true,
+    supportAudio: true, // 修改为支持音频
+    supportMultipleReferences: true,
     maxImages: 2,
   },
   "doubao-seedance-1-0-lite-i2v-250428": {
@@ -1838,6 +1705,8 @@ const defaultModelCapabilities: Record<
     supportMultipleImages: true,
     supportFirstLastFrame: true,
     supportTextOnly: false,
+    supportAudio: false,
+    supportMultipleReferences: true,
     maxImages: 6,
   },
   "doubao-seedance-1-0-lite-t2v-250428": {
@@ -1845,6 +1714,8 @@ const defaultModelCapabilities: Record<
     supportMultipleImages: false,
     supportFirstLastFrame: false,
     supportTextOnly: true,
+    supportAudio: false,
+    supportMultipleReferences: false,
     maxImages: 0,
   },
   "doubao-seedance-1-0-pro-250528": {
@@ -1852,6 +1723,8 @@ const defaultModelCapabilities: Record<
     supportMultipleImages: false,
     supportFirstLastFrame: true,
     supportTextOnly: true,
+    supportAudio: false,
+    supportMultipleReferences: true,
     maxImages: 2,
   },
   "doubao-seedance-1-0-pro-fast-251015": {
@@ -1859,6 +1732,8 @@ const defaultModelCapabilities: Record<
     supportMultipleImages: false,
     supportFirstLastFrame: false,
     supportTextOnly: true,
+    supportAudio: false,
+    supportMultipleReferences: false,
     maxImages: 1,
   },
   "sora-2": {
@@ -1866,6 +1741,8 @@ const defaultModelCapabilities: Record<
     supportMultipleImages: false,
     supportFirstLastFrame: false,
     supportTextOnly: true,
+    supportAudio: true,
+    supportMultipleReferences: false,
     maxImages: 1,
   },
   "sora-2-pro": {
@@ -1873,6 +1750,8 @@ const defaultModelCapabilities: Record<
     supportMultipleImages: false,
     supportFirstLastFrame: true,
     supportTextOnly: true,
+    supportAudio: true,
+    supportMultipleReferences: true,
     maxImages: 2,
   },
   "MiniMax-Hailuo-2.3": {
@@ -1880,6 +1759,8 @@ const defaultModelCapabilities: Record<
     supportMultipleImages: false,
     supportFirstLastFrame: false,
     supportTextOnly: true,
+    supportAudio: false,
+    supportMultipleReferences: false,
     maxImages: 1,
   },
   "MiniMax-Hailuo-2.3-Fast": {
@@ -1887,6 +1768,8 @@ const defaultModelCapabilities: Record<
     supportMultipleImages: false,
     supportFirstLastFrame: false,
     supportTextOnly: true,
+    supportAudio: false,
+    supportMultipleReferences: false,
     maxImages: 1,
   },
   "MiniMax-Hailuo-02": {
@@ -1894,6 +1777,8 @@ const defaultModelCapabilities: Record<
     supportMultipleImages: false,
     supportFirstLastFrame: false,
     supportTextOnly: true,
+    supportAudio: false,
+    supportMultipleReferences: false,
     maxImages: 1,
   },
 };
@@ -1971,13 +1856,26 @@ const loadVideoModels = async () => {
           supportMultipleImages: false,
           supportFirstLastFrame: false,
           supportTextOnly: true,
+          supportAudio: false,
+          supportMultipleReferences: false,
           maxImages: 1,
+        };
+
+        // 基于其他属性推断音频和多参考图支持
+        const inferredCapability = {
+          ...capability,
+          // 如果未明确设置supportMultipleReferences，则基于supportFirstLastFrame或supportMultipleImages推断
+          supportMultipleReferences: capability.supportMultipleReferences ??
+            (capability.supportFirstLastFrame || capability.supportMultipleImages),
+          // 如果未明确设置supportAudio，则基于模型名称或其他属性推断
+          supportAudio: capability.supportAudio ??
+            (modelName.includes("sora") || modelName.includes("audio")),
         };
 
         return {
           id: modelName,
           name: modelName,
-          ...capability,
+          ...inferredCapability,
         };
       },
     );
@@ -4779,6 +4677,12 @@ onBeforeUnmount(() => {
       .edit-tabs {
         height: 100%;
 
+        .edit-tab-label {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+
         :deep(.el-tabs__header) {
           margin: 0;
           background: var(--bg-secondary);
@@ -4789,10 +4693,13 @@ onBeforeUnmount(() => {
         :deep(.el-tabs__content) {
           height: calc(100% - 55px);
           overflow-y: auto;
+          background: var(--bg-secondary);
         }
 
         .tab-content {
           padding: 16px;
+          background: var(--bg-secondary);
+          min-height: 100%;
         }
 
         .scene-editor,
