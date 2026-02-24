@@ -389,6 +389,7 @@ export default {
   workflow: {
     backToProject: 'Back to Project',
     episodeProduction: 'Episode {number} Production',
+    episodeLabel: 'Episode {number}',
     steps: {
       content: 'Episode Content',
       generateImages: 'Generate Images',

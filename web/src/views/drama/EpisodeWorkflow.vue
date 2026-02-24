@@ -3,32 +3,29 @@
     <div class="content-wrapper animate-fade-in">
       <AppHeader :fixed="false" :show-logo="false">
         <template #left>
-          <el-button text @click="$router.back()" class="back-btn">
-            <el-icon><ArrowLeft /></el-icon>
-            <span>{{ $t("workflow.backToProject") }}</span>
-          </el-button>
-          <h1 class="header-title">
-            {{ $t("workflow.episodeProduction", { number: episodeNumber }) }}
-          </h1>
+          <div class="episode-header-left">
+            <el-button text @click="$router.back()" class="back-btn-icon">
+              <el-icon><ArrowLeft /></el-icon>
+            </el-button>
+            <span class="episode-header-title">{{ drama?.title || $t("workflow.episodeProduction", { number: episodeNumber }) }}</span>
+            <span class="episode-header-subtitle">{{ $t("workflow.episodeLabel", { number: episodeNumber }) }}</span>
+          </div>
         </template>
         <template #center>
-          <el-tabs v-model="currentStep" type="card" class="workflow-tabs" @tab-click="handleTabClick">
-            <el-tab-pane
-              :label="$t('workflow.steps.content')"
-              name="0"
-              :class="{ 'step-completed': isStepCompleted(0) }"
-            />
-            <el-tab-pane
-              :label="$t('workflow.steps.generateImages')"
-              name="1"
-              :class="{ 'step-completed': isStepCompleted(1) }"
-            />
-            <el-tab-pane
-              :label="$t('workflow.steps.splitStoryboard')"
-              name="2"
-              :class="{ 'step-completed': isStepCompleted(2) }"
-            />
-          </el-tabs>
+          <div class="workflow-steps-strip">
+            <div
+              v-for="step in workflowStepList"
+              :key="step.name"
+              class="workflow-step-item"
+              :class="{ active: currentStep === step.name, completed: isStepCompleted(step.index) }"
+              @click="handleStepClick(step.name)"
+            >
+              <span class="workflow-step-circle">
+                <el-icon v-if="isStepCompleted(step.index)"><Check /></el-icon>
+              </span>
+              <span class="workflow-step-label">{{ step.label }}</span>
+            </div>
+          </div>
         </template>
         <template #right>
           <el-button
@@ -1727,11 +1724,23 @@ const allImagesGenerated = computed(() => {
   return allCharsHaveImages && allScenesHaveImages;
 });
 
-// 标签页切换逻辑
+// 工作流步骤列表（用于头部步骤条，computed 以响应 i18n）
+const workflowStepList = computed(() => [
+  { name: '0', index: 0, label: $t('workflow.steps.content') },
+  { name: '1', index: 1, label: $t('workflow.steps.generateImages') },
+  { name: '2', index: 2, label: $t('workflow.steps.splitStoryboard') },
+]);
+
+// 步骤条点击（与 tab 切换一致）
+const handleStepClick = (stepName: string) => {
+  currentStep.value = stepName;
+  const key = getStepStorageKey();
+  if (key) localStorage.setItem(key, stepName);
+};
+
+// 标签页切换逻辑（保留供兼容）
 const handleTabClick = (tab: any) => {
   const targetStep = tab.paneName;
-
-  // 检查是否可以进入目标阶段（如果阶段未完成，只显示空内容）
   console.log(`切换到步骤: ${targetStep}`);
 };
 
@@ -3089,6 +3098,112 @@ onMounted(() => {
 
 .header-right {
   flex-shrink: 0;
+}
+
+/* 左侧：返回箭头 + 剧名(粗体) + 第X集(灰) */
+.episode-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.back-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  color: var(--text-secondary);
+  border-radius: var(--radius-md);
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.back-btn-icon:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.episode-header-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.episode-header-subtitle {
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* 中间：步骤条 - 小圆 + 对勾 + 文案（与参考图一致：约 18px 圆、浅灰底、完成为绿色对勾） */
+.workflow-steps-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+}
+
+.workflow-step-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 4px 0;
+  border-radius: var(--radius-md);
+  transition: opacity var(--transition-fast);
+}
+
+.workflow-step-item:hover {
+  opacity: 0.9;
+}
+
+.workflow-step-circle {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.08);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.workflow-step-item.completed .workflow-step-circle {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.workflow-step-item.completed .workflow-step-circle .el-icon {
+  font-size: 10px;
+  color: #52c41a;
+}
+
+.workflow-step-item.active .workflow-step-circle {
+  background: rgba(82, 196, 26, 0.25);
+  border-color: #52c41a;
+}
+
+.workflow-step-item.active .workflow-step-circle .el-icon {
+  font-size: 10px;
+  color: #52c41a;
+}
+
+.workflow-step-label {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.workflow-step-item.active .workflow-step-label,
+.workflow-step-item.completed .workflow-step-label {
+  color: var(--text-primary);
 }
 
 .workflow-card {

@@ -402,6 +402,7 @@ export default {
   workflow: {
     backToProject: '返回项目',
     episodeProduction: '第{number}章制作',
+    episodeLabel: '第{number}集',
     steps: {
       content: '章节内容',
       generateImages: '生成图片',
