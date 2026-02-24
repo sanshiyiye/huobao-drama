@@ -330,7 +330,7 @@
                     >
                       <el-radio-button label="first">首帧</el-radio-button>
                       <el-radio-button label="last">尾帧</el-radio-button>
-                      <!-- <el-radio-button label="panel">分镜板</el-radio-button> -->
+                      <el-radio-button label="panel">分镜板</el-radio-button>
                       <el-radio-button label="action">动作序列</el-radio-button>
                       <el-radio-button label="key">关键帧</el-radio-button>
                     </el-radio-group>
