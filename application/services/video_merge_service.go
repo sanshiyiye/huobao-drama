@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	models "github.com/drama-generator/backend/domain/models"
@@ -412,13 +413,28 @@ type FinalizeEpisodeRequest struct {
 func (s *VideoMergeService) FinalizeEpisode(episodeID string, timelineData *FinalizeEpisodeRequest) (map[string]interface{}, error) {
 	// 验证episode存在且属于该用户
 	var episode models.Episode
-	if err := s.db.Preload("Drama").Preload("Storyboards").Where("id = ?", episodeID).First(&episode).Error; err != nil {
+	if err := s.db.Preload("Drama").Where("id = ?", episodeID).First(&episode).Error; err != nil {
 		return nil, fmt.Errorf("episode not found")
 	}
 
+	// 直接从数据库查询分镜数据，确保获取到所有关联的分镜
+	var storyboards []models.Storyboard
+	if err := s.db.Where("episode_id = ?", episodeID).Find(&storyboards).Error; err != nil {
+		return nil, fmt.Errorf("failed to get storyboards: %w", err)
+	}
+
+	// 输出调试信息
+	s.log.Infow("Fetched storyboards", "count", len(storyboards), "storyboard_ids", func() []string {
+		var ids []string
+		for _, sb := range storyboards {
+			ids = append(ids, fmt.Sprintf("%d", sb.ID))
+		}
+		return ids
+	}())
+
 	// 构建分镜ID映射
 	sceneMap := make(map[string]models.Storyboard)
-	for _, scene := range episode.Storyboards {
+	for _, scene := range storyboards {
 		sceneMap[fmt.Sprintf("%d", scene.ID)] = scene
 	}
 
@@ -432,6 +448,13 @@ func (s *VideoMergeService) FinalizeEpisode(episodeID string, timelineData *Fina
 		for i, clip := range timelineData.Clips {
 			assetIDStr := getAssetIDString(clip.AssetID)
 			s.log.Infow("Processing clip", "index", i, "storyboard_id", clip.StoryboardID, "asset_id", assetIDStr, "order", clip.Order)
+
+			// 验证 clip.StoryboardID 的有效性，但对 asset_ 格式的 id 放松验证
+			if (clip.StoryboardID == "" || clip.StoryboardID == "undefined" || clip.StoryboardID == "null") && assetIDStr == "" {
+				s.log.Warnw("Invalid storyboard_id and no asset_id, skipping clip", "index", i, "storyboard_id", clip.StoryboardID)
+				continue
+			}
+
 			// 优先使用素材库中的视频（通过AssetID）
 			var videoURL string
 			var sceneID uint
@@ -463,8 +486,8 @@ func (s *VideoMergeService) FinalizeEpisode(episodeID string, timelineData *Fina
 				}
 			}
 
-			// 如果没有从素材库获取到视频，尝试从storyboard获取
-			if videoURL == "" && clip.StoryboardID != "" {
+			// 如果没有从素材库获取到视频，尝试从storyboard获取（但只对真正的storyboard_id格式进行查找）
+			if videoURL == "" && clip.StoryboardID != "" && !strings.HasPrefix(clip.StoryboardID, "asset_") {
 				scene, exists := sceneMap[clip.StoryboardID]
 				if !exists {
 					s.log.Warnw("Storyboard not found in episode, skipping", "storyboard_id", clip.StoryboardID)
@@ -500,12 +523,26 @@ func (s *VideoMergeService) FinalizeEpisode(episodeID string, timelineData *Fina
 			// 如果仍然没有视频URL，跳过该片段
 			if videoURL == "" {
 				s.log.Warnw("No video available for clip, skipping", "clip", clip)
-				if clip.StoryboardID != "" {
+				if clip.StoryboardID != "" && !strings.HasPrefix(clip.StoryboardID, "asset_") {
 					if scene, exists := sceneMap[clip.StoryboardID]; exists {
 						skippedScenes = append(skippedScenes, scene.StoryboardNumber)
 					}
 				}
 				continue
+			}
+
+			// 确保 sceneID 是有效的
+			if sceneID == 0 {
+				// 对于 asset_ 格式的 storyboard_id，可能没有对应的 sceneID，但我们可以继续处理
+				if !strings.HasPrefix(clip.StoryboardID, "asset_") {
+					if scene, exists := sceneMap[clip.StoryboardID]; exists {
+						sceneID = scene.ID
+					}
+				} else {
+					// 对于 asset_ 格式的 storyboard_id，我们可以使用 episodeID 或者其他标识符
+					// 这里我们不强制要求 sceneID，继续处理
+					s.log.Infow("No sceneID for asset clip, continuing without", "asset_id", assetIDStr)
+				}
 			}
 
 			sceneClip := models.SceneClip{
@@ -536,8 +573,8 @@ func (s *VideoMergeService) FinalizeEpisode(episodeID string, timelineData *Fina
 			// 优先从素材库查找该分镜关联的视频
 			var videoURL string
 			var asset models.Asset
-			if err := s.db.Where("storyboard_id = ? AND type = ? AND episode_id = ?",
-				scene.ID, models.AssetTypeVideo, episode.ID).
+			if err := s.db.Where("storyboard_id = ? AND type = ?",
+				scene.ID, models.AssetTypeVideo).
 				Order("created_at DESC").
 				First(&asset).Error; err == nil {
 				// 优先使用 local_path
@@ -608,7 +645,14 @@ func (s *VideoMergeService) FinalizeEpisode(episodeID string, timelineData *Fina
 
 	// 检查是否至少有一个场景可以合成
 	if len(sceneClips) == 0 {
-		return nil, fmt.Errorf("no scenes with videos available for merging")
+		result := map[string]interface{}{
+			"message":      "没有找到可合成的视频场景",
+			"merge_id":     0,
+			"episode_id":   episodeID,
+			"scenes_count": 0,
+			"warning":      "所有场景都没有视频文件，无法合成视频",
+		}
+		return result, nil
 	}
 
 	// 创建视频合成任务

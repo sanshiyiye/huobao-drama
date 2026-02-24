@@ -1204,6 +1204,17 @@
                             </el-icon>
                           </div>
                           <div v-else></div>
+                          <!-- 手动添加到时间线按钮 -->
+                          <div
+                            v-if="video.status === 'completed'"
+                            class="add-to-timeline-button"
+                            @click.stop="addVideoToTimeline(video)"
+                          >
+                            <el-icon :size="18" color="var(--text-primary)">
+                              <Plus />
+                            </el-icon>
+                          </div>
+                          <div v-else></div>
                           <!-- 删除按钮 -->
                           <div
                             class="delete-video-button"
@@ -1224,7 +1235,11 @@
           </el-tab-pane>
 
           <!-- 音效与配乐标签 -->
-          <el-tab-pane :label="$t('video.soundAndMusicTab')" name="audio">
+          <el-tab-pane
+            v-if="currentModelCapability?.supportAudio"
+            :label="$t('video.soundAndMusicTab')"
+            name="audio"
+          >
             <div class="tab-content">
               <AudioTab />
             </div>
@@ -1239,6 +1254,7 @@
                 @preview="previewMergedVideo"
                 @download="downloadVideo"
                 @delete="deleteMerge"
+                @createMerge="createMerge"
               />
             </div>
           </el-tab-pane>
@@ -1867,9 +1883,9 @@ const loadVideoModels = async () => {
           // 如果未明确设置supportMultipleReferences，则基于supportFirstLastFrame或supportMultipleImages推断
           supportMultipleReferences: capability.supportMultipleReferences ??
             (capability.supportFirstLastFrame || capability.supportMultipleImages),
-          // 如果未明确设置supportAudio，则基于模型名称或其他属性推断
-          supportAudio: capability.supportAudio ??
-            (modelName.includes("sora") || modelName.includes("audio")),
+          // 如果未明确设置supportAudio，则仅基于明确配置，不进行推断
+          // 这样可以防止音频页签在不支持音频的模型上意外显示
+          supportAudio: capability.supportAudio ?? false,
         };
 
         return {
@@ -2605,7 +2621,52 @@ const playVideo = (video: VideoGeneration) => {
 };
 
 // 添加视频到素材库
+const addVideoToTimeline = (video: VideoGeneration) => {
+  console.log("=== addVideoToTimeline 调用 ===");
+  console.log("视频对象:", video);
+
+  if (!video.storyboard_id || !video.video_url) {
+    ElMessage.warning("视频信息不完整，无法添加到时间线");
+    return;
+  }
+
+  if (timelineEditorRef.value) {
+    // 尝试找到对应的场景
+    const scene = storyboards.value.find(
+      (s) => String(s.id) === String(video.storyboard_id)
+    );
+
+    if (scene) {
+      // 调用时间线编辑器的添加方法
+      try {
+        // 对场景对象进行处理，确保包含 storyboard_id 和 asset_id 属性
+        const processedScene = {
+          ...scene,
+          storyboard_id: String(scene.id), // 分镜场景使用自身ID作为storyboard_id
+          asset_id: undefined, // 分镜场景没有asset_id
+        };
+        // 直接调用时间线编辑器的添加方法
+        const result = timelineEditorRef.value.addClipToTimeline(processedScene);
+        console.log("添加到时间线结果:", result);
+        ElMessage.success("已添加到时间线");
+      } catch (error) {
+        console.error("添加到时间线失败:", error);
+        ElMessage.error("添加到时间线失败");
+      }
+    } else {
+      console.warn("未找到对应的场景");
+      ElMessage.warning("未找到对应的场景，无法添加到时间线");
+    }
+  } else {
+    console.warn("timelineEditorRef.value 为空");
+    ElMessage.warning("时间线编辑器未初始化");
+  }
+};
+
 const addVideoToAssets = async (video: VideoGeneration) => {
+  console.log("=== addVideoToAssets 调用 ===");
+  console.log("视频对象:", video);
+
   if (video.status !== "completed" || !video.video_url) {
     ElMessage.warning("只能添加已完成的视频到素材库");
     return;
@@ -2626,6 +2687,7 @@ const addVideoToAssets = async (video: VideoGeneration) => {
         // 自动替换：先删除旧素材
         try {
           await assetAPI.deleteAsset(existingAsset.id);
+          console.log("旧素材删除成功");
         } catch (error) {
           console.error("删除旧素材失败:", error);
         }
@@ -2633,15 +2695,18 @@ const addVideoToAssets = async (video: VideoGeneration) => {
     }
 
     // 添加新素材
-    await assetAPI.importFromVideo(video.id);
+    console.log("调用 importFromVideo API，视频生成ID:", video.id);
+    const assetResult = await assetAPI.importFromVideo(video.id);
+    console.log("importFromVideo API 响应:", assetResult);
     ElMessage.success("已添加到素材库");
 
     // 重新加载素材库列表
     await loadVideoAssets();
+    console.log("重新加载后素材库列表:", videoAssets.value);
 
-    // 如果是替换操作，更新时间线中使用该分镜的所有视频片段
-    if (isReplacing && video.storyboard_id && video.video_url) {
-      console.log("=== 视频替换，准备更新时间线 ===");
+    // 更新时间线中使用该分镜的所有视频片段（无论是新增还是替换）
+    if (video.storyboard_id && video.video_url) {
+      console.log("=== 更新时间线 ===");
       console.log("timelineEditorRef.value:", timelineEditorRef.value);
       console.log("video.storyboard_id:", video.storyboard_id);
       console.log("video.video_url:", video.video_url);
@@ -2656,6 +2721,7 @@ const addVideoToAssets = async (video: VideoGeneration) => {
       }
     }
   } catch (error: any) {
+    console.error("添加视频到素材库失败:", error);
     ElMessage.error(error.message || "添加失败");
   } finally {
     addingToAssets.value.delete(video.id);
@@ -3047,7 +3113,7 @@ const startVideoPolling = () => {
       generatedVideos.value = result.items || [];
 
       // 检测是否有视频从 processing 变为 completed
-      const hasNewlyCompleted = generatedVideos.value.some((newVideo) => {
+      const newlyCompletedVideos = generatedVideos.value.filter((newVideo) => {
         const oldVideo = oldVideos.find((v) => v.id === newVideo.id);
         return (
           oldVideo &&
@@ -3056,8 +3122,14 @@ const startVideoPolling = () => {
         );
       });
 
+      // 如果有视频完成，自动添加到素材库和时间线
+      for (const video of newlyCompletedVideos) {
+        console.log("视频生成完成，自动添加到素材库:", video.id);
+        await addVideoToAssets(video);
+      }
+
       // 如果有视频完成，重新加载分镜列表以更新 duration
-      if (hasNewlyCompleted && episodeId.value) {
+      if (newlyCompletedVideos.length > 0 && episodeId.value) {
         try {
           const storyboardsRes = await dramaAPI.getStoryboards(
             episodeId.value.toString(),
@@ -3607,8 +3679,15 @@ const handleMergeCompleted = async (mergeId: number) => {
   activeTab.value = "merges";
 };
 
+// 创建合成任务
+const createMerge = () => {
+  // 切换到时间线编辑器标签页
+  activeTab.value = "timeline";
+  ElMessage.success("请在时间线编辑器中添加视频片段并编排顺序");
+};
+
 // 下载视频
-const downloadVideo = async (url: string, title: string) => {
+const downloadVideo = async (merge: any) => {
   try {
     const loadingMsg = ElMessage.info({
       message: "正在准备下载...",
@@ -3616,7 +3695,7 @@ const downloadVideo = async (url: string, title: string) => {
     });
 
     // 处理相对路径，添加 /static/ 前缀
-    const videoUrl = url.startsWith("http") ? url : `/static/${url}`;
+    const videoUrl = merge.merged_url?.startsWith("http") ? merge.merged_url : `/static/${merge.merged_url}`;
 
     // 使用fetch获取视频blob
     const response = await fetch(videoUrl);
@@ -3630,7 +3709,7 @@ const downloadVideo = async (url: string, title: string) => {
     // 创建下载链接
     const link = document.createElement("a");
     link.href = blobUrl;
-    link.download = `${title}.mp4`;
+    link.download = `${merge.title}.mp4`;
     link.style.display = "none";
     document.body.appendChild(link);
     link.click();
@@ -3650,14 +3729,14 @@ const downloadVideo = async (url: string, title: string) => {
 };
 
 // 预览合成视频
-const previewMergedVideo = (url: string) => {
+const previewMergedVideo = (merge: any) => {
   // 处理相对路径，添加 /static/ 前缀
-  const videoUrl = url.startsWith("http") ? url : `/static/${url}`;
+  const videoUrl = merge.merged_url?.startsWith("http") ? merge.merged_url : `/static/${merge.merged_url}`;
   window.open(videoUrl, "_blank");
 };
 
 // 删除视频合成记录
-const deleteMerge = async (mergeId: number) => {
+const deleteMerge = async (merge: any) => {
   try {
     await ElMessageBox.confirm(
       "确定要删除此合成记录吗？此操作不可恢复。",
@@ -3669,7 +3748,7 @@ const deleteMerge = async (mergeId: number) => {
       },
     );
 
-    await videoMergeAPI.deleteMerge(mergeId);
+    await videoMergeAPI.deleteMerge(merge.id);
     ElMessage.success("删除成功");
     // 刷新列表
     await loadVideoMerges();

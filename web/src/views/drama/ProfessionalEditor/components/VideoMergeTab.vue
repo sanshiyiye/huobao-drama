@@ -75,7 +75,7 @@
               size="small"
               link
               @click="$emit('preview', row)"
-              v-if="row.status === 'completed' && row.video_url"
+              v-if="row.status === 'completed' && row.merged_url"
             >
               {{ $t('video.preview') }}
             </el-button>
@@ -83,7 +83,7 @@
               size="small"
               link
               @click="$emit('download', row)"
-              v-if="row.status === 'completed' && row.video_url"
+              v-if="row.status === 'completed' && row.merged_url"
             >
               {{ $t('video.download') }}
             </el-button>

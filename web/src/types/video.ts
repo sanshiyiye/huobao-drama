@@ -71,6 +71,34 @@ export const VIDEO_ASPECT_RATIOS = [
   { label: '4:3 (传统)', value: '4:3' }
 ]
 
+export interface VideoMerge {
+  id: number
+  episode_id: number
+  drama_id: number
+  title: string
+  provider: string
+  model?: string
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  scenes: any
+  merged_url?: string
+  duration?: number
+  task_id?: string
+  error_msg?: string
+  created_at: string
+  completed_at?: string
+  progress?: number
+}
+
+export interface SceneClip {
+  scene_id: number
+  video_url: string
+  start_time: number
+  end_time: number
+  duration: number
+  order: number
+  transition: any
+}
+
 export const CAMERA_MOTIONS = [
   { label: '静止', value: 'static' },
   { label: '推进', value: 'zoom_in' },

@@ -483,29 +483,57 @@ const emit = defineEmits<{
 
 // 基础状态
 const availableStoryboards = computed(() => {
+  console.log('🔍 availableStoryboards - props.assets:', props.assets)
+  console.log('🔍 availableStoryboards - props.scenes:', props.scenes)
+
+  // 处理素材库资产
   const assets = (props.assets || [])
     .filter((a) => {
       const isValid = a.type === 'video' && a.url
       return isValid
     })
-    .map((a) => ({
-      id: `asset_${a.id}`,
-      storyboard_number: a.storyboard_num || a.id,
-      storyboard_num: a.storyboard_num,
-      storyboard_id: a.storyboard_id,
-      video_url: getVideoUrl(a), // 优先使用 local_path
-      duration: a.duration || 0,
-      name: a.name,
-      isAsset: true,
-      asset_id: a.id, // 使用 asset_id 字段名
-    }))
-    .sort((a, b) => {
-      // 优先按storyboard_num排序，如果没有则按storyboard_id排序，最后按asset id排序
-      const aNum = a.storyboard_num || a.storyboard_id || a.asset_id
-      const bNum = b.storyboard_num || b.storyboard_id || b.asset_id
-      return aNum - bNum
+    .map((a) => {
+      console.log('🎥 Processing asset:', a)
+      return {
+        id: `asset_${a.id}`,
+        storyboard_number: a.storyboard_num || a.id,
+        storyboard_num: a.storyboard_num,
+        storyboard_id: a.storyboard_id ? String(a.storyboard_id) : `asset_${a.id}`, // 确保storyboard_id有值且类型正确
+        video_url: getVideoUrl(a), // 优先使用 local_path
+        duration: a.duration || 0,
+        name: a.name,
+        isAsset: true,
+        asset_id: a.id, // 使用 asset_id 字段名
+      }
     })
-  return assets
+
+  // 处理分镜场景
+  const scenes = (props.scenes || [])
+    .map((s) => {
+      console.log('🎬 Processing scene:', s)
+      return {
+        id: s.id,
+        storyboard_number: s.storyboard_number,
+        storyboard_num: s.storyboard_number,
+        storyboard_id: String(s.id), // 分镜场景使用自身ID作为storyboard_id，并确保类型为字符串
+        video_url: s.video_url,
+        duration: s.duration || 0,
+        name: s.title || `Scene ${s.storyboard_number}`,
+        isAsset: false,
+        asset_id: undefined, // 分镜场景没有asset_id
+      }
+    })
+
+  // 合并并排序所有可用场景
+  const allStoryboards = [...assets, ...scenes].sort((a, b) => {
+    // 优先按storyboard_num排序，如果没有则按storyboard_id排序，最后按asset id排序
+    const aNum = a.storyboard_num || a.storyboard_id || a.asset_id
+    const bNum = b.storyboard_num || b.storyboard_id || b.asset_id
+    return aNum - bNum
+  })
+
+  console.log('✅ availableStoryboards - all storyboards:', allStoryboards)
+  return allStoryboards
 })
 const timelineClips = ref<TimelineClip[]>([])
 const audioClips = ref<AudioClip[]>([])
@@ -852,6 +880,8 @@ const getClipStyle = (clip: TimelineClip) => {
 
 // 拖拽场景到时间线
 const handleDragStart = (event: DragEvent, scene: Scene) => {
+  console.log('📦 handleDragStart - scene object:', scene)
+  console.log('📦 handleDragStart - asset_id:', scene.asset_id)
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'copy'
     event.dataTransfer.setData('scene', JSON.stringify(scene))
@@ -864,6 +894,8 @@ const handleTrackDrop = (event: DragEvent) => {
   if (!sceneData) return
 
   const scene = JSON.parse(sceneData) as Scene
+  console.log('🎯 handleTrackDrop - parsed scene:', scene)
+  console.log('🎯 handleTrackDrop - asset_id:', scene.asset_id)
 
   // 默认添加到末尾，不使用拖拽位置（避免产生空隙）
   addClipToTimeline(scene)
@@ -889,6 +921,10 @@ const getVideoDuration = (videoUrl: string): Promise<number> => {
 }
 
 const addClipToTimeline = async (scene: Scene, insertAtPosition?: number) => {
+  console.log('🎬 addClipToTimeline - received scene:', scene)
+  console.log('🎬 addClipToTimeline - storyboard_id:', scene.storyboard_id)
+  console.log('🎬 addClipToTimeline - asset_id:', scene.asset_id)
+
   // 获取视频真实时长
   let videoDuration = scene.duration || 5
   if (scene.video_url) {
@@ -930,9 +966,10 @@ const addClipToTimeline = async (scene: Scene, insertAtPosition?: number) => {
     }
   }
 
+  // 确保新片段包含正确的属性
   const newClip: TimelineClip = {
     id: `clip_${Date.now()}_${scene.id}`,
-    storyboard_id: scene.storyboard_id,
+    storyboard_id: scene.storyboard_id || String(scene.id), // 确保storyboard_id有值
     storyboard_number: scene.storyboard_number,
     video_url: scene.video_url,
     asset_id: scene.asset_id, // 保存素材库ID
@@ -946,6 +983,9 @@ const addClipToTimeline = async (scene: Scene, insertAtPosition?: number) => {
       duration: 1.0,
     },
   }
+
+  console.log('✨ newClip created:', newClip)
+  console.log('✨ newClip.asset_id:', newClip.asset_id)
 
   // 如果是插入到中间，需要调整后续片段的位置
   if (insertAfterIndex !== null && insertAfterIndex < timelineClips.value.length - 1) {
@@ -1919,16 +1959,21 @@ const submitTimelineForMerge = async () => {
     serverMerging.value = true
 
     // 准备时间线数据
+    console.log('📋 完整时间线片段数据:', timelineClips.value)
     const timelineData = {
-      episode_id: props.episodeId,
       clips: timelineClips.value.map((clip, index) => {
         console.log(`📹 片段 ${index}:`, {
           storyboard_id: clip.storyboard_id,
           asset_id: clip.asset_id,
           transition: clip.transition,
         })
+        // 确保 storyboard_id 值有效，避免 "undefined" 字符串
+        const validStoryboardId = clip.storyboard_id && clip.storyboard_id !== 'undefined'
+          ? String(clip.storyboard_id)
+          : `clip_${index}`
+
         return {
-          storyboard_id: String(clip.storyboard_id),
+          storyboard_id: validStoryboardId,
           asset_id: clip.asset_id, // 包含素材库ID
           order: index,
           start_time: clip.start_time,
@@ -1990,12 +2035,25 @@ const updateClipsByStoryboardId = (storyboardId: string | number, newVideoUrl: s
     console.log('✅ 时间线视频已更新')
     ElMessage.success('时间线中的视频已自动更新')
   } else {
-    console.log('⚠️ 没有找到匹配的时间线片段')
+    console.log('⚠️ 没有找到匹配的时间线片段，尝试添加新片段')
+    // 尝试从场景列表中找到对应的场景，然后添加到时间线
+    const scene = availableStoryboards.value.find(
+      (s) => String(s.storyboard_id) === targetId
+    )
+
+    if (scene) {
+      console.log('✅ 找到对应的场景，添加到时间线')
+      addClipToTimeline(scene)
+    } else {
+      console.warn('⚠️ 未找到对应的场景，无法添加到时间线')
+      ElMessage.warning('未找到对应的场景，无法自动添加到时间线')
+    }
   }
 }
 
 defineExpose({
   updateClipsByStoryboardId,
+  addClipToTimeline,
 })
 </script>
 

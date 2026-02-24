@@ -158,6 +158,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, CircleCheckFilled, InfoFilled, Picture, Upload } from '@element-plus/icons-vue'
 import ShotContextTab from './ShotContextTab.vue'
+import { getImageUrl, hasImage } from '@/utils/image'
 
 interface ImageGenerationTabProps {
   currentStoryboard?: any
@@ -329,14 +330,6 @@ const handleDeleteImage = async (image: any) => {
 
 const handleImageError = (event: any) => {
   console.error('图片加载失败:', event)
-}
-
-const hasImage = (image: any) => {
-  return image.image_url || image.local_path
-}
-
-const getImageUrl = (image: any) => {
-  return image.image_url || (image.local_path ? `/api/files/${image.local_path}` : '')
 }
 
 const getStatusText = (status: string) => {

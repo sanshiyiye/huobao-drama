@@ -722,7 +722,10 @@ export default {
       view: '查看详情',
       download: '下载',
       delete: '删除'
-    }
+    },
+    delete: '删除',
+    preview: '预览',
+    download: '下载'
   },
   asset: {
     title: '资源库',
