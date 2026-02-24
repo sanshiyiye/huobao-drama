@@ -125,6 +125,12 @@
           <p>{{ $t('drama.management.filePath') }}: {{ previewImage.path }}</p>
           <p>{{ $t('drama.management.fileSize') }}: {{ formatFileSize(previewImage.size) }}</p>
           <p>{{ $t('drama.management.associationStatus') }}: {{ formatAssociationStatusText(previewImage.isAssociated) }}</p>
+          <p v-if="previewImage.isAssociated && previewImage.associated_type">
+            {{ $t('drama.management.associatedType') }}: {{ formatAssociatedTypeText(previewImage.associated_type) }}
+          </p>
+          <p v-if="previewImage.isAssociated && previewImage.associated_id">
+            {{ $t('drama.management.associatedId') }}: {{ previewImage.associated_id }}
+          </p>
         </div>
       </div>
     </el-dialog>
@@ -173,6 +179,8 @@ const refreshImages = async () => {
     images.value = data.map((item: any) => ({
       ...item,
       isAssociated: item.is_associated ?? item.isAssociated,
+      associatedType: item.associated_type ?? item.associatedType,
+      associatedId: item.associated_id ?? item.associatedId,
       createdAt: item.created_at ?? item.createdAt,
     }));
     ElMessage.success($t('drama.management.imagesRefreshed'));
@@ -198,6 +206,16 @@ const formatAssociationStatus = (row: any) => {
 
 const formatAssociationStatusText = (isAssociated: boolean) => {
   return isAssociated ? $t('drama.management.associated') : $t('drama.management.notAssociated');
+};
+
+const formatAssociatedTypeText = (associatedType: string) => {
+  const typeMap: Record<string, string> = {
+    'image': $t('drama.management.associatedTypeImage'),
+    'character': $t('drama.management.associatedTypeCharacter'),
+    'scene': $t('drama.management.associatedTypeScene'),
+    'prop': $t('drama.management.associatedTypeProp'),
+  };
+  return typeMap[associatedType] || associatedType;
 };
 
 const formatDateTime = (row: any) => {
