@@ -32,30 +32,126 @@
         @delete="handleDeleteStoryboard"
       />
 
-      <!-- 中间时间线编辑区域 -->
+      <!-- 中间编辑区域（媒体预览 / 视频编辑 / 批量编辑） -->
       <div class="timeline-area">
-        <VideoTimelineEditor
-          ref="timelineEditorRef"
-          v-if="storyboards.length > 0"
-          :scenes="storyboards"
-          :episode-id="episodeId.toString()"
-          :drama-id="dramaId.toString()"
-          :assets="videoAssets"
-          @select-scene="handleTimelineSelect"
-          @asset-deleted="loadVideoAssets"
-          @merge-completed="handleMergeCompleted"
-        />
-        <el-empty
-          v-else
-          :description="$t('storyboard.noStoryboard')"
-          class="empty-timeline"
-        />
+        <el-tabs v-model="centerAreaTab" class="center-area-tabs">
+          <!-- 媒体预览：按分镜分组展示图片、视频资源 -->
+          <el-tab-pane :label="$t('video.mediaPreview')" name="media">
+            <div class="center-tab-content media-preview-content">
+              <template v-if="storyboards.length > 0">
+                <div class="media-by-shot">
+                  <div
+                    v-for="shot in storyboards"
+                    :key="shot.id"
+                    class="shot-resource-group"
+                  >
+                    <div class="shot-resource-title">
+                      {{ $t('storyboard.shotNumber', { number: shot.storyboard_number }) }} {{ shot.title || $t('storyboard.untitled') }}
+                    </div>
+                    <div class="shot-resource-body">
+                      <div class="resource-section">
+                        <span class="resource-label">{{ $t('video.videoCount', { count: (videoAssetsByShot[String(shot.id)] || []).length }) }}</span>
+                        <div class="resource-thumb-list">
+                          <div
+                            v-for="asset in (videoAssetsByShot[String(shot.id)] || [])"
+                            :key="asset.id"
+                            class="thumb-item video-thumb"
+                            @click="previewAssetVideo(asset)"
+                          >
+                            <video v-if="asset.url || asset.local_path" :src="getVideoUrl(asset)" />
+                            <span v-else class="thumb-placeholder">—</span>
+                            <span class="thumb-duration">{{ asset.duration ? asset.duration.toFixed(1) : '?' }}s</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="resource-section">
+                        <span class="resource-label">{{ $t('editor.shotImage') }}：{{ (imagesByShot[String(shot.id)] || []).length }} 张</span>
+                        <div class="resource-thumb-list images">
+                          <div
+                            v-for="img in (imagesByShot[String(shot.id)] || []).slice(0, 6)"
+                            :key="img.id"
+                            class="thumb-item image-thumb"
+                            @click="previewAssetImage(img)"
+                          >
+                            <img v-if="img.image_url || img.local_path" :src="getImageUrl(img)" alt="" />
+                            <span v-else class="thumb-placeholder">—</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+              <el-empty v-else :description="$t('video.noMediaResource')" class="empty-center-tab" />
+            </div>
+          </el-tab-pane>
+
+          <!-- 视频编辑：当前时间线 + 素材库 -->
+          <el-tab-pane :label="$t('video.videoEditing')" name="video">
+            <div class="center-tab-content video-editing-content">
+              <VideoTimelineEditor
+                v-if="storyboards.length > 0"
+                ref="timelineEditorRef"
+                :scenes="storyboards"
+                :episode-id="episodeId.toString()"
+                :drama-id="dramaId.toString()"
+                :assets="videoAssets"
+                @select-scene="handleTimelineSelect"
+                @asset-deleted="loadVideoAssets"
+                @merge-completed="handleMergeCompleted"
+              />
+              <el-empty
+                v-else
+                :description="$t('storyboard.noStoryboard')"
+                class="empty-timeline"
+              />
+            </div>
+          </el-tab-pane>
+
+          <!-- 批量编辑：分镜列表每项生图/出片 + 底部一键生图/一键出片 -->
+          <el-tab-pane :label="$t('video.batchEditing')" name="batch">
+            <div class="center-tab-content batch-editing-content">
+              <template v-if="storyboards.length > 0">
+                <div class="batch-shot-list">
+                  <div
+                    v-for="shot in storyboards"
+                    :key="shot.id"
+                    class="batch-shot-item"
+                  >
+                    <span class="batch-shot-label">{{ $t('storyboard.shotNumber', { number: shot.storyboard_number }) }} {{ shot.title || $t('storyboard.untitled') }}</span>
+                    <div class="batch-shot-actions">
+                      <el-button size="small" class="batch-flat-btn" @click="handleBatchGenerateImage(shot)">
+                        <el-icon><Picture /></el-icon>
+                        <span>{{ $t('video.batchGenerateImage') }}</span>
+                      </el-button>
+                      <el-button size="small" class="batch-flat-btn" @click="handleBatchGenerateVideo(shot)">
+                        <el-icon><VideoPlay /></el-icon>
+                        <span>{{ $t('video.batchGenerateVideo') }}</span>
+                      </el-button>
+                    </div>
+                  </div>
+                </div>
+                <div class="batch-one-click">
+                  <el-button class="batch-flat-btn batch-flat-btn-lg" @click="handleOneClickAllImages">
+                    <el-icon><Picture /></el-icon>
+                    <span>{{ $t('video.oneClickAllImages') }}</span>
+                  </el-button>
+                  <el-button class="batch-flat-btn batch-flat-btn-lg" @click="handleOneClickAllVideos">
+                    <el-icon><VideoPlay /></el-icon>
+                    <span>{{ $t('video.oneClickAllVideos') }}</span>
+                  </el-button>
+                </div>
+              </template>
+              <el-empty v-else :description="$t('storyboard.noStoryboard')" class="empty-center-tab" />
+            </div>
+          </el-tab-pane>
+        </el-tabs>
       </div>
 
       <!-- 右侧编辑面板 -->
       <EditPanel
         :active-tab="activeTab"
-        :show-audio-tab="!!currentModelCapability?.supportAudio"
+        :show-audio-tab="!!(currentModelCapability && !currentModelCapability.supportAudio)"
         @update:active-tab="activeTab = $event"
       >
         <template #image-tab>
@@ -1593,6 +1689,10 @@ const showPropSelector = ref(false);
 
 const currentStoryboardId = ref<string | null>(null);
 const activeTab = ref("shot");
+/** 中间区域 Tab：media=媒体预览, video=视频编辑, batch=批量编辑 */
+const centerAreaTab = ref("video");
+/** 媒体预览 Tab 下按分镜分组的图片（切换至媒体预览时加载） */
+const mediaPreviewImagesByShot = ref<Record<string, ImageGeneration[]>>({});
 const showSceneSelector = ref(false);
 const showCharacterSelector = ref(false);
 const showCharacterImagePreview = ref(false);
@@ -1929,6 +2029,81 @@ const currentModelCapability = computed(() => {
     (m) => m.id === selectedVideoModel.value,
   );
 });
+
+// 按分镜分组的视频素材（中间区媒体预览用）
+const videoAssetsByShot = computed(() => {
+  const map: Record<string, Asset[]> = {};
+  storyboards.value.forEach((s) => {
+    map[String(s.id)] = [];
+  });
+  videoAssets.value.forEach((a) => {
+    if (a.storyboard_id != null) {
+      const key = String(a.storyboard_id);
+      if (!map[key]) map[key] = [];
+      map[key].push(a);
+    }
+  });
+  return map;
+});
+
+// 按分镜分组的图片（媒体预览用，来自 mediaPreviewImagesByShot）
+const imagesByShot = computed(() => {
+  return mediaPreviewImagesByShot.value;
+});
+
+// 切换到媒体预览时加载各分镜图片
+watch(centerAreaTab, async (tab) => {
+  if (tab === "media" && storyboards.value.length > 0 && Object.keys(mediaPreviewImagesByShot.value).length === 0) {
+    await loadMediaPreviewImages();
+  }
+});
+
+const loadMediaPreviewImages = async () => {
+  const map: Record<string, ImageGeneration[]> = {};
+  try {
+    for (const shot of storyboards.value) {
+      const result = await imageAPI.listImages({
+        storyboard_id: shot.id,
+        page: 1,
+        page_size: 50,
+      });
+      map[String(shot.id)] = result.items || [];
+    }
+    mediaPreviewImagesByShot.value = map;
+  } catch (e) {
+    console.error("加载媒体预览图片失败:", e);
+  }
+};
+
+const previewAssetVideo = (asset: Asset) => {
+  const url = getVideoUrl(asset);
+  if (url) window.open(url, "_blank");
+};
+
+const previewAssetImage = (img: ImageGeneration) => {
+  const url = getImageUrl(img);
+  if (url) window.open(url, "_blank");
+};
+
+const handleBatchGenerateImage = (shot: Storyboard) => {
+  currentStoryboardId.value = String(shot.id);
+  activeTab.value = "image";
+  ElMessage.info("已切换至该镜头，请在右侧「镜头图片」中点击生图");
+};
+
+const handleBatchGenerateVideo = (shot: Storyboard) => {
+  currentStoryboardId.value = String(shot.id);
+  activeTab.value = "video";
+  ElMessage.info("已切换至该镜头，请在右侧「视频生成」中生成视频");
+};
+
+const handleOneClickAllImages = () => {
+  ElMessage.info("一键生图：请先在右侧为各镜头生成图片后，在媒体预览中查看");
+};
+
+const handleOneClickAllVideos = () => {
+  ElMessage.info("一键出片：请先在右侧为各镜头生成视频后，在媒体预览或视频编辑中查看");
+};
 
 // 当前模型支持的参考图模式
 const availableReferenceModes = computed(() => {
