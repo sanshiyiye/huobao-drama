@@ -781,9 +781,21 @@
             </div> <!-- 阶段2内容结束 -->
           </div>
         </el-card>
+
+        <!-- 阶段 3: 专业制作（内嵌，不跳转） -->
+        <div v-show="currentStep === '3'" class="stage-card stage-card-fullscreen professional-embed">
+          <ProfessionalEditor
+            v-if="currentEpisode?.id"
+            :drama-id="dramaId"
+            :episode-number="episodeNumber"
+            :episode-id="currentEpisode.id"
+            embed-mode
+          />
+          <el-empty v-else :description="$t('workflow.loadingEpisode')" />
+        </div>
       </div>
 
-      <div class="actions-container" v-show="currentStep !== '0'">
+      <div class="actions-container" v-show="currentStep !== '0' && currentStep !== '3'">
         <div class="action-buttons" v-show="currentStep === '1'">
           <el-button size="large" @click="prevStep">
             <el-icon><ArrowLeft /></el-icon>
@@ -821,8 +833,8 @@
           <el-button size="large" @click="regenerateShots" :icon="MagicStick" :loading="generatingShots">
             {{ generatingShots ? $t("workflow.aiSplitting") : $t("workflow.reSplitShots") }}
           </el-button>
-          <el-button type="success" size="large" @click="goToProfessionalUI">
-            {{ $t("workflow.enterProfessional") }}
+          <el-button size="large" @click="goToProfessionalUI">
+            {{ $t("workflow.nextStep") }}
             <el-icon><ArrowRight /></el-icon>
           </el-button>
         </div>
@@ -1443,6 +1455,7 @@ import type { AIServiceConfig } from "@/types/ai";
 import { imageAPI } from "@/api/image";
 import type { Drama } from "@/types/drama";
 import { AppHeader } from "@/components/common";
+import ProfessionalEditor from "@/views/drama/ProfessionalEditor.vue";
 import { getImageUrl, hasImage } from "@/utils/image";
 
 const route = useRoute();
@@ -1729,6 +1742,7 @@ const workflowStepList = computed(() => [
   { name: '0', index: 0, label: $t('workflow.steps.content') },
   { name: '1', index: 1, label: $t('workflow.steps.generateImages') },
   { name: '2', index: 2, label: $t('workflow.steps.splitStoryboard') },
+  { name: '3', index: 3, label: $t('workflow.steps.professional') },
 ]);
 
 // 步骤条点击（与 tab 切换一致）
@@ -1756,6 +1770,10 @@ const isStepCompleted = (step: number): boolean => {
 
   if (step === 2) {
     return currentEpisode.value?.storyboards && currentEpisode.value.storyboards.length > 0; // 分镜已拆分
+  }
+
+  if (step === 3) {
+    return currentEpisode.value?.storyboards && currentEpisode.value.storyboards.length > 0; // 与步骤2一致，进入过专业制作即视为完成
   }
 
   return false;
@@ -2508,14 +2526,10 @@ const pollTaskStatus = async (taskId: string) => {
 
         ElMessage.success($t("workflow.splitSuccess"));
 
-        // 跳转到专业编辑器页面
-        router.push({
-          name: "ProfessionalEditor",
-          params: {
-            dramaId: dramaId,
-            episodeNumber: episodeNumber,
-          },
-        });
+        // 切换到专业制作 tab（不跳转页面）
+        currentStep.value = "3";
+        const key = getStepStorageKey();
+        if (key) localStorage.setItem(key, "3");
       } else if (task.status === "failed") {
         // 任务失败
         if (pollTimer) {
@@ -2827,14 +2841,9 @@ const goToProfessionalUI = () => {
     ElMessage.error("章节信息不存在");
     return;
   }
-
-  router.push({
-    name: "ProfessionalEditor",
-    params: {
-      dramaId: dramaId,
-      episodeNumber: episodeNumber,
-    },
-  });
+  currentStep.value = "3";
+  const key = getStepStorageKey();
+  if (key) localStorage.setItem(key, "3");
 };
 
 const goToCompose = () => {
@@ -3013,15 +3022,23 @@ onMounted(() => {
 .content-wrapper {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
   margin: 0 auto;
   width: 100%;
   height: 100vh;
   overflow: hidden;
+
+  /* 顶部 header 和底部操作栏不收缩，内容区填满剩余空间 */
+  > :first-child {
+    flex-shrink: 0;
+  }
+  > .actions-container {
+    flex-shrink: 0;
+  }
 }
 
 .content-container {
-  height: calc(100% - 134px);
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -3283,6 +3300,26 @@ onMounted(() => {
 
 .stage-card {
   margin: 12px;
+
+  &.professional-embed {
+    padding: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 140px);
+  }
+
+  &.professional-embed :deep(.professional-editor) {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  &.professional-embed :deep(.professional-editor .editor-main) {
+    flex: 1;
+    min-height: 0;
+  }
 
   &.stage-card-fullscreen {
     .stage-body-fullscreen {

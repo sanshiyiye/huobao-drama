@@ -1,7 +1,8 @@
 <template>
-  <div class="professional-editor">
-    <!-- 顶部工具栏 -->
+  <div class="professional-editor" :class="{ 'embed-mode': editorProps.embedMode }">
+    <!-- 顶部工具栏（嵌入时由 workflow 头统一展示，此处隐藏） -->
     <AppHeader
+      v-if="!editorProps.embedMode"
       :fixed="false"
       :show-logo="false"
       @config-updated="loadVideoModels"
@@ -1574,9 +1575,33 @@ const route = useRoute();
 const router = useRouter();
 const { t: $t } = useI18n();
 
-const dramaId = Number(route.params.dramaId);
-const episodeNumber = Number(route.params.episodeNumber);
-const episodeId = ref<number>(0);
+// 支持通过 props 嵌入（如 EpisodeWorkflow 内嵌），无 props 时从路由取
+const editorProps = defineProps<{
+  dramaId?: string | number;
+  episodeNumber?: number;
+  episodeId?: number;
+  /** 嵌入模式：隐藏顶部栏，由父级 workflow 头控制 */
+  embedMode?: boolean;
+}>();
+
+const dramaId = computed(() =>
+  editorProps.dramaId !== undefined && editorProps.dramaId !== null
+    ? Number(editorProps.dramaId)
+    : Number(route.params.dramaId)
+);
+const episodeNumber = computed(() =>
+  editorProps.episodeNumber !== undefined && editorProps.episodeNumber !== null
+    ? Number(editorProps.episodeNumber)
+    : Number(route.params.episodeNumber)
+);
+const episodeId = ref<number>(editorProps.episodeId ?? 0);
+watch(
+  () => editorProps.episodeId,
+  (v) => {
+    if (v !== undefined && v !== null) episodeId.value = Number(v);
+  },
+  { immediate: true }
+);
 
 const drama = ref<Drama | null>(null);
 const episode = ref<Episode | null>(null);
@@ -1905,7 +1930,7 @@ const loadVideoModels = async () => {
 const loadVideoAssets = async () => {
   try {
     const result = await assetAPI.listAssets({
-      drama_id: dramaId.toString(),
+      drama_id: dramaId.value.toString(),
       episode_id: episodeId.value,
       type: "video",
       page: 1,
@@ -2576,7 +2601,7 @@ const generateFrameImage = async () => {
     }
 
     const result = await imageAPI.generateImage({
-      drama_id: dramaId.toString(),
+      drama_id: dramaId.value.toString(),
       prompt: currentFramePrompt.value,
       storyboard_id: currentStoryboard.value.id,
       image_type: "storyboard",
@@ -2969,7 +2994,7 @@ const generateVideo = async () => {
 
     // 构建请求参数
     const requestParams: any = {
-      drama_id: dramaId.toString(),
+      drama_id: dramaId.value.toString(),
       storyboard_id: currentStoryboard.value.id,
       prompt:
         currentStoryboard.value.video_prompt ||
@@ -3256,12 +3281,12 @@ const removeCharacterFromShot = async (charId: number) => {
 const loadData = async () => {
   try {
     // 加载剧集信息
-    const dramaRes = await dramaAPI.get(dramaId.toString());
+    const dramaRes = await dramaAPI.get(dramaId.value.toString());
     drama.value = dramaRes;
 
     // 找到当前章节
     const ep = dramaRes.episodes?.find(
-      (e) => e.episode_number === episodeNumber,
+      (e) => e.episode_number === episodeNumber.value,
     );
     if (!ep) {
       ElMessage.error("章节不存在");
@@ -3400,7 +3425,7 @@ const uploadImage = () => {
         // 创建图片生成记录（关联到当前镜头和帧类型）
         await imageAPI.uploadImage({
           storyboard_id: currentStoryboard.value.id,
-          drama_id: parseInt(dramaId),
+          drama_id: parseInt(String(dramaId.value)),
           frame_type: selectedFrameType.value || "first",
           image_url: imageUrl,
           prompt: currentFramePrompt.value || "用户上传图片",
@@ -3505,7 +3530,7 @@ const handleCropSave = async (images: { blob: Blob; frameType: string }[]) => {
       // 调用上传接口
       await imageAPI.uploadImage({
         storyboard_id: currentStoryboard.value.id,
-        drama_id: Number(dramaId),
+        drama_id: Number(dramaId.value),
         frame_type: img.frameType,
         image_url: imageUrl,
         prompt: cropImageData.value.prompt || "",
@@ -3530,7 +3555,7 @@ const handleCropSave = async (images: { blob: Blob; frameType: string }[]) => {
 const goBack = () => {
   router.replace({
     name: "EpisodeWorkflowNew",
-    params: { id: dramaId, episodeNumber },
+    params: { id: dramaId.value, episodeNumber: episodeNumber.value },
   });
 };
 

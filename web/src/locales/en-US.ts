@@ -393,8 +393,10 @@ export default {
     steps: {
       content: 'Episode Content',
       generateImages: 'Generate Images',
-      splitStoryboard: 'Split Storyboard'
+      splitStoryboard: 'Split Storyboard',
+      professional: 'Professional'
     },
+    loadingEpisode: 'Loading episode...',
     scriptPlaceholder: 'Enter episode content...',
     saveChapter: 'Save Chapter',
     chapterContent: 'Chapter {number} Content',
@@ -424,6 +426,7 @@ export default {
     dragFilesHere: 'Drop files here, or',
     clickToUpload: 'Click to Upload',
     prevStep: 'Previous Step',
+    nextStep: 'Next Step',
     nextStepSplitShots: 'Next Step: Split Shots',
     reExtractConfirmTitle: 'Re-extract Confirmation',
     reExtractConfirmMessage: 'Re-extraction will overwrite extracted characters and scenes (including generated images). Continue?',

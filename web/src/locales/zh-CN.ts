@@ -406,8 +406,10 @@ export default {
     steps: {
       content: '章节内容',
       generateImages: '生成图片',
-      splitStoryboard: '拆分分镜'
+      splitStoryboard: '拆分分镜',
+      professional: '专业制作'
     },
+    loadingEpisode: '加载章节信息...',
     scriptPlaceholder: '请输入章节内容...',
     saveChapter: '保存章节',
     chapterContent: '第{number}章内容',
@@ -437,6 +439,7 @@ export default {
     dragFilesHere: '将文件拖到此处，或',
     clickToUpload: '点击上传',
     prevStep: '上一步',
+    nextStep: '下一步',
     nextStepSplitShots: '下一步：拆分分镜',
     reExtractConfirmTitle: '重新提取确认',
     reExtractConfirmMessage: '重新提取将覆盖已提取的角色和场景（包括已生成的图片），确定继续吗？',
