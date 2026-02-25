@@ -460,6 +460,16 @@ export default {
     uploadImage: 'Upload Image',
     selectFromLibrary: 'Select from Library',
     shotList: 'Shot List',
+    shotCount: '{count} shots',
+    shotNumberTitle: 'Shot {n} {title}',
+    untitledShot: 'Untitled',
+    charactersUnit: ' characters',
+    scenesUnit: ' scenes',
+    systemPrompt: 'System prompt',
+    associatedCharacters: 'Associated characters',
+    associatedScenes: 'Associated scenes',
+    clickToBindCharacter: 'Click to bind character',
+    clickToBindScene: 'Click to bind scene',
     dragFilesHere: 'Drop files here, or',
     clickToUpload: 'Click to Upload',
     prevStep: 'Previous Step',
@@ -657,7 +667,9 @@ export default {
     selectImageModel: 'Select image generation model',
     modelConfigTip: 'For generating character and scene images',
     modelConfigSaved: 'Model configuration saved',
-    pleaseSelectModels: 'Please select text and image generation models'
+    pleaseSelectModels: 'Please select text and image generation models',
+    selectCharacters: 'Select characters',
+    selectScene: 'Select scene'
   },
   professionalEditor: {
     duration: 'Duration',

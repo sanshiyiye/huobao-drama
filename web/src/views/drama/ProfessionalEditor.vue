@@ -119,6 +119,26 @@
                     class="batch-shot-item"
                   >
                     <span class="batch-shot-label">{{ $t('storyboard.shotNumber', { number: shot.storyboard_number }) }} {{ shot.title || $t('storyboard.untitled') }}</span>
+                    <div class="batch-shot-middle">
+                      <div class="batch-video-model-wrap">
+                        <label class="batch-video-model-label">{{ $t('video.model') }}</label>
+                        <el-select
+                          :model-value="getBatchShotVideoModel(shot)"
+                          @update:model-value="(v) => setBatchShotVideoModel(shot, v)"
+                          :placeholder="$t('video.selectVideoModel')"
+                          size="small"
+                          class="batch-video-model-select"
+                          filterable
+                        >
+                          <el-option
+                            v-for="m in batchVideoModelsFirstLast"
+                            :key="m.id"
+                            :label="m.name"
+                            :value="m.id"
+                          />
+                        </el-select>
+                      </div>
+                    </div>
                     <div class="batch-shot-actions">
                       <el-button size="small" class="batch-flat-btn" @click="handleBatchGenerateImage(shot)">
                         <el-icon><Picture /></el-icon>
@@ -1038,9 +1058,14 @@
                   </div>
                 </div>
 
-                <!-- 生成提示词展示 -->
+                <!-- 生成提示词展示（与编辑镜头同步：视频提示词 / 动作描述 / 镜头描述 三选一，保存后刷新） -->
                 <div class="video-prompt-box">
-                  {{ currentStoryboard.video_prompt || "暂无提示词" }}
+                  {{
+                    currentStoryboard?.video_prompt ||
+                    currentStoryboard?.action ||
+                    currentStoryboard?.description ||
+                    "暂无提示词"
+                  }}
                 </div>
 
                 <!-- 视效设置 -->
@@ -1169,7 +1194,7 @@
                   </div>
                 </div>
 
-                <!-- 旁白设置 -->
+                <!-- 旁白设置（与编辑镜头同步，此处不可编辑，请在编辑镜头中修改） -->
                 <div class="settings-section">
                   <div class="section-label">{{ $t("editor.description") }}</div>
                   <div class="audio-controls">
@@ -1179,7 +1204,7 @@
                       size="small"
                       type="textarea"
                       :rows="3"
-                      @blur="saveStoryboardField('description')"
+                      readonly
                     />
                   </div>
                 </div>
@@ -1758,6 +1783,8 @@ const timelineEditorRef = ref<InstanceType<typeof VideoTimelineEditor> | null>(
 const videoReferenceImages = ref<ImageGeneration[]>([]);
 const selectedVideoModel = ref<string>("");
 const selectedReferenceMode = ref<string>(""); // 参考图模式：single, first_last, multiple, none
+// 批量出片每镜头选择的视频模型，key 为 shot.id
+const batchShotVideoModel = ref<Record<string, string>>({});
 const previewImageUrl = ref<string>(""); // 预览大图的URL
 const videoModelCapabilities = ref<VideoModelCapability[]>([]);
 let videoPollingTimer: any = null;
@@ -2085,16 +2112,155 @@ const previewAssetImage = (img: ImageGeneration) => {
   if (url) window.open(url, "_blank");
 };
 
-const handleBatchGenerateImage = (shot: Storyboard) => {
+// 批量生图：一键生成当前分镜的首帧+尾帧，结果在镜头图片的首帧/尾帧页签刷新
+const handleBatchGenerateImage = async (shot: Storyboard) => {
   currentStoryboardId.value = String(shot.id);
   activeTab.value = "image";
-  ElMessage.info("已切换至该镜头，请在右侧「镜头图片」中点击生图");
+  await nextTick();
+
+  const board = currentStoryboard.value;
+  if (!board) return;
+
+  let firstPrompt = "";
+  let lastPrompt = "";
+  try {
+    const res = await getStoryboardFramePrompts(shot.id);
+    const list = res.frame_prompts || [];
+    const fallback = shot.action || shot.description || "";
+    firstPrompt = list.find((p: any) => p.frame_type === "first")?.prompt || fallback;
+    lastPrompt = list.find((p: any) => p.frame_type === "last")?.prompt || fallback;
+  } catch (_) {
+    const fallback = shot.action || shot.description || "";
+    firstPrompt = fallback;
+    lastPrompt = fallback;
+  }
+
+  const prevFirst = selectedFrameType.value;
+  const prevPrompt = currentFramePrompt.value;
+
+  try {
+    selectedFrameType.value = "first";
+    currentFramePrompt.value = firstPrompt;
+    await generateFrameImage();
+  } finally {
+    selectedFrameType.value = "last";
+    currentFramePrompt.value = lastPrompt;
+  }
+  await generateFrameImage();
+
+  selectedFrameType.value = prevFirst;
+  currentFramePrompt.value = prevPrompt;
+  await loadStoryboardImages(shot.id, "first");
+  ElMessage.success("首帧、尾帧生成任务已提交，请在「镜头图片」首帧/尾帧页签查看");
 };
 
-const handleBatchGenerateVideo = (shot: Storyboard) => {
-  currentStoryboardId.value = String(shot.id);
-  activeTab.value = "video";
-  ElMessage.info("已切换至该镜头，请在右侧「视频生成」中生成视频");
+// 批量出片：首尾帧方式生成视频，弹窗确认请求体与模型后提交
+const batchVideoModelsFirstLast = computed(() => {
+  const firstLast = videoModelCapabilities.value.filter((m) => m.supportFirstLastFrame);
+  return firstLast.length > 0 ? firstLast : videoModelCapabilities.value;
+});
+
+const getBatchShotVideoModel = (shot: Storyboard) =>
+  batchShotVideoModel.value[String(shot.id)] || selectedVideoModel.value || "";
+
+const setBatchShotVideoModel = (shot: Storyboard, model: string) => {
+  batchShotVideoModel.value[String(shot.id)] = model;
+};
+
+const handleBatchGenerateVideo = async (shot: Storyboard) => {
+  const modelId = getBatchShotVideoModel(shot);
+  if (!modelId) {
+    ElMessage.warning("请先选择该镜头的视频模型");
+    return;
+  }
+
+  try {
+    const [firstRes, lastRes] = await Promise.all([
+      imageAPI.listImages({
+        storyboard_id: shot.id,
+        page: 1,
+        page_size: 50,
+        frame_type: "first",
+      }),
+      imageAPI.listImages({
+        storyboard_id: shot.id,
+        page: 1,
+        page_size: 50,
+        frame_type: "last",
+      }),
+    ]);
+    const firstList = firstRes.items || [];
+    const lastList = lastRes.items || [];
+    const firstImage = firstList.find((img: any) => img.status === "completed") || firstList[0];
+    const lastImage = lastList.find((img: any) => img.status === "completed") || lastList[0];
+    if (!firstImage || !lastImage) {
+      ElMessage.warning("请先为该镜头生成首帧、尾帧图片后再出片");
+      return;
+    }
+
+    const provider = extractProviderFromModel(modelId);
+    const requestParams: any = {
+      drama_id: dramaId.value.toString(),
+      storyboard_id: shot.id,
+      prompt:
+        shot.video_prompt || shot.action || shot.description || "",
+      duration: videoDuration.value,
+      provider,
+      model: modelId,
+      reference_mode: "first_last",
+      first_frame_local_path: firstImage.local_path,
+      first_frame_url: firstImage.local_path ? undefined : firstImage.image_url,
+      last_frame_local_path: lastImage.local_path,
+      last_frame_url: lastImage.local_path ? undefined : lastImage.image_url,
+    };
+    if (!requestParams.first_frame_local_path) delete requestParams.first_frame_local_path;
+    if (!requestParams.first_frame_url) delete requestParams.first_frame_url;
+    if (!requestParams.last_frame_local_path) delete requestParams.last_frame_local_path;
+    if (!requestParams.last_frame_url) delete requestParams.last_frame_url;
+
+    const modelName = videoModelCapabilities.value.find((m) => m.id === modelId)?.name || modelId;
+    const bodyForDisplay = JSON.stringify(requestParams, null, 2)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+    const modelNameEscaped = modelName
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
+    await ElMessageBox.confirm(
+      `<div class="batch-video-confirm-body">
+        <div class="batch-video-confirm-row">
+          <span class="batch-video-confirm-label">模型</span>
+          <span class="batch-video-confirm-value">${modelNameEscaped}</span>
+        </div>
+        <div class="batch-video-confirm-row">
+          <span class="batch-video-confirm-label">请求体</span>
+          <pre class="batch-video-confirm-pre">${bodyForDisplay}</pre>
+        </div>
+      </div>
+      <p style="margin-top:12px;color:var(--text-secondary);">确认后开始生成视频，与视频生成页签「生成视频」逻辑一致。</p>`,
+      "出片确认",
+      {
+        confirmButtonText: "确认生成",
+        cancelButtonText: "取消",
+        dangerouslyUseHTMLString: true,
+      },
+    );
+
+    generatingVideo.value = true;
+    const result = await videoAPI.generateVideo(requestParams);
+    generatedVideos.value.unshift(result);
+    currentStoryboardId.value = String(shot.id);
+    activeTab.value = "video";
+    startVideoPolling();
+    ElMessage.success("视频生成任务已提交");
+  } catch (e: any) {
+    if (e !== "cancel") ElMessage.error("生成失败: " + (e?.message || "未知错误"));
+  } finally {
+    generatingVideo.value = false;
+  }
 };
 
 const handleOneClickAllImages = () => {
@@ -3974,6 +4140,9 @@ onBeforeUnmount(() => {
   stopVideoPolling();
   stopMergePolling();
 });
+
+// 供父组件（如 EpisodeWorkflow）在编辑镜头保存后调用，使专业制作页与编辑镜头弹窗数据同步
+defineExpose({ loadData });
 </script>
 
 <style scoped lang="scss">

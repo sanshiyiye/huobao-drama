@@ -616,126 +616,108 @@
             </div>
 
             <div v-else>
-            <!-- 分镜列表 -->
+            <!-- 分镜列表（卡片样式：系统提示词可编辑，关联角色/关联场景展示） -->
             <div
               v-if="
                 currentEpisode?.storyboards &&
                 currentEpisode.storyboards.length > 0
               "
-              class="shots-list"
+              class="shots-list shots-list-cards"
             >
               <div class="shots-header">
                 <h3>{{ $t("workflow.shotList") }}</h3>
+                <span class="shots-summary">
+                  {{ $t("workflow.shotCount", { count: currentEpisode.storyboards.length }) }}
+                  <template v-if="currentEpisode?.characters?.length">
+                    | {{ currentEpisode.characters.length }}{{ $t("workflow.charactersUnit") }}
+                  </template>
+                  <template v-if="currentEpisode?.scenes?.length">
+                    | {{ currentEpisode.scenes.length }}{{ $t("workflow.scenesUnit") }}
+                  </template>
+                </span>
               </div>
 
-              <el-table
-                :data="currentEpisode.storyboards"
-                border
-                stripe
-                style="margin-top: 16px"
-              >
-                <el-table-column
-                  type="index"
-                  :label="$t('storyboard.table.number')"
-                  width="60"
-                />
-                <el-table-column
-                  :label="$t('storyboard.table.title')"
-                  width="120"
-                  show-overflow-tooltip
+              <div class="shot-card-list">
+                <div
+                  v-for="(shot, index) in currentEpisode.storyboards"
+                  :key="shot.id"
+                  class="shot-card"
                 >
-                  <template #default="{ row }">
-                    {{ row.title || "-" }}
-                  </template>
-                </el-table-column>
-                <el-table-column
-                  :label="$t('storyboard.table.shotType')"
-                  width="80"
-                >
-                  <template #default="{ row }">
-                    {{ row.shot_type || "-" }}
-                  </template>
-                </el-table-column>
-                <el-table-column
-                  :label="$t('storyboard.table.movement')"
-                  width="80"
-                >
-                  <template #default="{ row }">
-                    {{ row.movement || "-" }}
-                  </template>
-                </el-table-column>
-                <el-table-column
-                  :label="$t('storyboard.table.location')"
-                  width="150"
-                >
-                  <template #default="{ row }">
-                    <el-popover
-                      placement="right"
-                      :width="300"
-                      trigger="hover"
-                      :content="row.action || '-'"
-                    >
-                      <template #reference>
-                        <!-- 单行打点 -->
-                        <span class="overflow-tooltip">{{
-                          row.location || "-"
-                        }}</span>
-                      </template>
-                    </el-popover>
-                  </template>
-                </el-table-column>
-                <el-table-column
-                  :label="$t('storyboard.table.character')"
-                  width="100"
-                >
-                  <template #default="{ row }">
-                    <span v-if="row.characters && row.characters.length > 0">
-                      {{ row.characters.map((c) => c.name || c).join(", ") }}
-                    </span>
-                    <span v-else>-</span>
-                  </template>
-                </el-table-column>
-                <el-table-column :label="$t('storyboard.table.action')">
-                  <template #default="{ row }">
-                    <el-popover
-                      placement="right"
-                      :width="300"
-                      trigger="hover"
-                      :content="row.action || '-'"
-                    >
-                      <template #reference>
-                        <!-- 单行打点 -->
-                        <span class="overflow-tooltip">{{
-                          row.action || "-"
-                        }}</span>
-                      </template>
-                    </el-popover>
-                  </template>
-                </el-table-column>
-                <el-table-column
-                  :label="$t('storyboard.table.duration')"
-                  width="80"
-                >
-                  <template #default="{ row }">
-                    {{ row.duration || "-" }}秒
-                  </template>
-                </el-table-column>
-                <el-table-column
-                  :label="$t('storyboard.table.operations')"
-                  width="100"
-                  fixed="right"
-                >
-                  <template #default="{ row, $index }">
+                  <div class="shot-card-left">
+                    <span class="shot-number-circle">{{ index + 1 }}</span>
+                  </div>
+                  <div class="shot-card-main">
+                    <div class="shot-card-title-row">
+                      <span class="shot-title-text">{{ $t("workflow.shotNumberTitle", { n: index + 1, title: shot.title || $t("workflow.untitledShot") }) }}</span>
+                    </div>
+                    <div class="shot-card-prompt-row">
+                      <span class="shot-char-count">{{ (shot.video_prompt || '').length }}/500</span>
+                    </div>
+                    <el-input
+                      v-model="shot.video_prompt"
+                      type="textarea"
+                      :rows="3"
+                      :maxlength="500"
+                      show-word-limit
+                      :placeholder="$t('workflow.videoPromptPlaceholder')"
+                      class="shot-system-prompt-input"
+                      @blur="saveShotSystemPrompt(shot)"
+                    />
+                    <div class="shot-meta">
+                      <div class="shot-meta-row">
+                        <span class="shot-label">{{ $t("workflow.associatedCharacters") }}:</span>
+                        <template v-if="getShotCharacterNames(shot).length > 0">
+                          <el-tag
+                            v-for="name in getShotCharacterNames(shot)"
+                            :key="name"
+                            size="small"
+                            class="shot-tag shot-tag-character"
+                          >
+                            {{ name }}
+                          </el-tag>
+                        </template>
+                        <el-button
+                          v-else
+                          type="primary"
+                          link
+                          size="small"
+                          @click="openBindCharacter(shot, index)"
+                        >
+                          + {{ $t("workflow.clickToBindCharacter") }}
+                        </el-button>
+                      </div>
+                      <div class="shot-meta-row">
+                        <span class="shot-label">{{ $t("workflow.associatedScenes") }}:</span>
+                        <template v-if="getShotScene(shot)">
+                          <el-tag size="small" class="shot-tag shot-tag-scene">
+                            <el-icon><Location /></el-icon>
+                            {{ getShotScene(shot)?.location || getShotScene(shot)?.title || getShotScene(shot)?.id }}
+                          </el-tag>
+                        </template>
+                        <el-button
+                          v-else
+                          type="primary"
+                          link
+                          size="small"
+                          @click="openBindScene(shot, index)"
+                        >
+                          + {{ $t("workflow.clickToBindScene") }}
+                        </el-button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="shot-card-actions">
                     <el-button
-                      type="primary"
-                      size="small"
-                      @click="editShot(row, $index)"
+                      type="danger"
+                      link
+                      :icon="Delete"
+                      @click="deleteShot(shot, index)"
                     >
-                      {{ $t("common.edit") }}
+                      {{ $t("common.delete") }}
                     </el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <!-- 未拆分时显示 -->
@@ -786,6 +768,7 @@
         <div v-show="currentStep === '3'" class="stage-card stage-card-fullscreen professional-embed">
           <ProfessionalEditor
             v-if="currentEpisode?.id"
+            ref="professionalEditorRef"
             :drama-id="dramaId"
             :episode-number="episodeNumber"
             :episode-id="currentEpisode.id"
@@ -1036,6 +1019,51 @@
             :loading="savingShot"
             >{{ $t("common.save") }}</el-button
           >
+        </template>
+      </el-dialog>
+
+      <!-- 绑定角色与场景（简易弹窗，替代完整编辑页） -->
+      <el-dialog
+        v-model="bindDialogVisible"
+        :title="$t('workflow.associatedCharacters') + ' / ' + $t('workflow.associatedScenes')"
+        width="480px"
+      >
+        <el-form label-width="100px">
+          <el-form-item :label="$t('workflow.associatedCharacters')">
+            <el-select
+              v-model="bindForm.characterIds"
+              multiple
+              filterable
+              :placeholder="$t('workflow.selectCharacters')"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="c in currentEpisode?.characters || []"
+                :key="c.id"
+                :label="c.name"
+                :value="c.id"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item :label="$t('workflow.associatedScenes')">
+            <el-select
+              v-model="bindForm.scene_id"
+              clearable
+              :placeholder="$t('workflow.selectScene')"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="s in currentEpisode?.scenes || []"
+                :key="s.id"
+                :label="s.location || s.title || s.id"
+                :value="Number(s.id)"
+              />
+            </el-select>
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="bindDialogVisible = false">{{ $t("common.cancel") }}</el-button>
+          <el-button type="primary" @click="saveBindDialog">{{ $t("common.save") }}</el-button>
         </template>
       </el-dialog>
 
@@ -2569,6 +2597,7 @@ const shotEditDialogVisible = ref(false);
 const editingShot = ref<any>(null);
 const editingShotIndex = ref<number>(-1);
 const savingShot = ref(false);
+const professionalEditorRef = ref<{ loadData?: () => Promise<void> } | null>(null);
 
 const editShot = (shot: any, index: number) => {
   editingShot.value = { ...shot };
@@ -2583,6 +2612,107 @@ const editShot = (shot: any, index: number) => {
   }
   editingShotIndex.value = index;
   shotEditDialogVisible.value = true;
+};
+
+// 解析镜头关联的场景（用于卡片列表展示）
+const getShotScene = (shot: any) => {
+  if (shot.scene && typeof shot.scene === "object") return shot.scene;
+  if (shot.background && typeof shot.background === "object") return shot.background;
+  if (!shot.scene_id || !currentEpisode.value?.scenes) return null;
+  return currentEpisode.value.scenes.find(
+    (s: any) => String(s.id) === String(shot.scene_id),
+  ) || null;
+};
+
+// 解析镜头关联角色名称（与专业制作一致：支持对象数组或 ID 数组）
+const getShotCharacterNames = (shot: any): string[] => {
+  const chars = shot?.characters;
+  if (!chars || !Array.isArray(chars) || chars.length === 0) return [];
+  const first = chars[0];
+  if (typeof first === "object" && first !== null && "name" in first) {
+    return chars.map((c: any) => c.name || String(c.id || ""));
+  }
+  const episodeChars = currentEpisode.value?.characters || [];
+  return chars
+    .map((id: number) => episodeChars.find((c: any) => c.id === id || String(c.id) === String(id)))
+    .filter(Boolean)
+    .map((c: any) => c.name || "");
+};
+
+// 卡片内系统提示词失焦保存
+const saveShotSystemPrompt = async (shot: any) => {
+  if (!shot?.id) return;
+  try {
+    await dramaAPI.updateStoryboard(shot.id.toString(), {
+      video_prompt: shot.video_prompt ?? "",
+    });
+    ElMessage.success("系统提示词已保存");
+    if (currentStep.value === "3" && professionalEditorRef.value?.loadData) {
+      await professionalEditorRef.value.loadData();
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || "保存失败");
+  }
+};
+
+// 删除分镜
+const deleteShot = async (shot: any, index: number) => {
+  try {
+    await ElMessageBox.confirm(
+      "确定删除该镜头？删除后无法恢复。",
+      "删除确认",
+      { type: "warning" },
+    );
+    await dramaAPI.deleteStoryboard(Number(shot.id));
+    await loadDramaData();
+    ElMessage.success("已删除");
+  } catch (e: any) {
+    if (e !== "cancel") ElMessage.error(e?.message || "删除失败");
+  }
+};
+
+// 绑定角色/场景：打开简易绑定弹窗（仅角色+场景，不再打开完整编辑页）
+const bindingShotIndex = ref<number>(-1);
+const bindDialogVisible = ref(false);
+const bindForm = ref<{ characterIds: number[]; scene_id: number | null }>({
+  characterIds: [],
+  scene_id: null,
+});
+
+const openBindCharacter = (shot: any, index: number) => {
+  bindingShotIndex.value = index;
+  const chars = shot.characters || [];
+  bindForm.value = {
+    characterIds: Array.isArray(chars)
+      ? chars.map((c: any) => (typeof c === "object" ? c.id : c)).filter(Boolean)
+      : [],
+    scene_id: shot.scene_id != null ? Number(shot.scene_id) : null,
+  };
+  bindDialogVisible.value = true;
+};
+
+const openBindScene = (shot: any, index: number) => {
+  openBindCharacter(shot, index);
+};
+
+const saveBindDialog = async () => {
+  if (bindingShotIndex.value < 0 || !currentEpisode.value?.storyboards) return;
+  const shot = currentEpisode.value.storyboards[bindingShotIndex.value];
+  if (!shot?.id) return;
+  try {
+    await dramaAPI.updateStoryboard(shot.id.toString(), {
+      characters: bindForm.value.characterIds,
+      scene_id: bindForm.value.scene_id ?? undefined,
+    });
+    await loadDramaData();
+    bindDialogVisible.value = false;
+    ElMessage.success("关联已保存");
+    if (currentStep.value === "3" && professionalEditorRef.value?.loadData) {
+      await professionalEditorRef.value.loadData();
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || "保存失败");
+  }
 };
 
 const saveShotEdit = async () => {
@@ -2602,6 +2732,11 @@ const saveShotEdit = async () => {
       currentEpisode.value.storyboards[editingShotIndex.value] = {
         ...editingShot.value,
       };
+    }
+
+    // 若当前在专业制作页，刷新其分镜数据，使生成提示词展示与旁白与编辑镜头内容同步
+    if (currentStep.value === "3" && professionalEditorRef.value?.loadData) {
+      await professionalEditorRef.value.loadData();
     }
 
     ElMessage.success("镜头修改成功");
@@ -3355,6 +3490,143 @@ onMounted(() => {
 
 .stage-body {
   background: var(--bg-card);
+}
+
+/* 分镜列表卡片样式（系统提示词、关联角色、关联场景） */
+.shots-list-cards {
+  .shots-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+
+    h3 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .shots-summary {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+  }
+
+  .shot-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .shot-card {
+    display: flex;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    align-items: flex-start;
+  }
+
+  .shot-card-left {
+    flex-shrink: 0;
+  }
+
+  .shot-number-circle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--text-inverse);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .shot-card-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .shot-card-title-row {
+    margin-bottom: 8px;
+  }
+
+  .shot-title-text {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .shot-card-prompt-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+
+  .shot-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  .shot-char-count {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .shot-system-prompt-input {
+    margin-bottom: 12px;
+  }
+
+  .shot-system-prompt-input :deep(.el-textarea__inner) {
+    background: var(--bg-card);
+    border-color: var(--border-primary);
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .shot-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .shot-meta-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+
+    .shot-label {
+      flex-shrink: 0;
+    }
+  }
+
+  .shot-tag {
+    &.shot-tag-character {
+      background: rgba(64, 158, 255, 0.12);
+      border-color: rgba(64, 158, 255, 0.3);
+      color: var(--accent);
+    }
+
+    &.shot-tag-scene {
+      background: rgba(230, 162, 60, 0.12);
+      border-color: rgba(230, 162, 60, 0.35);
+      color: #e6a23c;
+    }
+  }
+
+  .shot-card-actions {
+    flex-shrink: 0;
+  }
 }
 
 .action-buttons {
