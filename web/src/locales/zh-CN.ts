@@ -748,6 +748,7 @@ export default {
     batchGenerateVideo: '出片',
     oneClickAllImages: '一键生图',
     oneClickAllVideos: '一键出片',
+    oneClickMerge: '一键合成',
     videoTrack: '视频轨道',
     audioTrack: '音频轨道',
     clearTrack: '清空轨道',

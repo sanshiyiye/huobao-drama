@@ -198,6 +198,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 		{
 			videoMerges.GET("", videoMergeHandler.ListMerges)
 			videoMerges.POST("", videoMergeHandler.MergeVideos)
+			videoMerges.POST("/one-click", videoMergeHandler.OneClickMerge)
 			videoMerges.GET("/:merge_id", videoMergeHandler.GetMerge)
 			videoMerges.DELETE("/:merge_id", videoMergeHandler.DeleteMerge)
 		}

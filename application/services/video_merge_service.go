@@ -48,6 +48,13 @@ type MergeVideoRequest struct {
 	Model     string             `json:"model"`
 }
 
+// OneClickMergeRequest 一键合成请求
+type OneClickMergeRequest struct {
+	EpisodeID string `json:"episode_id" binding:"required"`
+	DramaID   string `json:"drama_id" binding:"required"`
+	Title     string `json:"title"`
+}
+
 func (s *VideoMergeService) MergeVideos(req *MergeVideoRequest) (*models.VideoMerge, error) {
 	// 验证episode权限
 	var episode models.Episode
@@ -97,6 +104,88 @@ func (s *VideoMergeService) MergeVideos(req *MergeVideoRequest) (*models.VideoMe
 	go s.processMergeVideo(videoMerge.ID)
 
 	return videoMerge, nil
+}
+
+// OneClickMerge 一键合成方法
+func (s *VideoMergeService) OneClickMerge(req *OneClickMergeRequest) (*models.VideoMerge, error) {
+	// 验证episode权限
+	var episode models.Episode
+	if err := s.db.Preload("Storyboards").Where("id = ?", req.EpisodeID).First(&episode).Error; err != nil {
+		return nil, fmt.Errorf("episode not found")
+	}
+
+	// 获取分镜并按storyboard_number排序
+	var storyboards []models.Storyboard
+	if err := s.db.Where("episode_id = ?", req.EpisodeID).Order("storyboard_number ASC").Find(&storyboards).Error; err != nil {
+		return nil, fmt.Errorf("failed to get storyboards: %w", err)
+	}
+
+	// 为每个分镜获取最近一条已完成的视频
+	var sceneClips []models.SceneClip
+	var skippedScenes []int
+
+	for order, scene := range storyboards {
+		// 查找该分镜最新的已完成视频
+		var videoGen models.VideoGeneration
+		if err := s.db.Where("storyboard_id = ? AND status = ?", scene.ID, models.VideoStatusCompleted).Order("created_at DESC").First(&videoGen).Error; err == nil {
+			var videoURL string
+
+			// 优先使用本地路径，其次使用远程URL
+			if videoGen.LocalPath != nil && *videoGen.LocalPath != "" {
+				// 检查是否已经是完整路径
+				if filepath.IsAbs(*videoGen.LocalPath) || filepath.HasPrefix(*videoGen.LocalPath, s.storagePath) {
+					videoURL = *videoGen.LocalPath
+				} else {
+					videoURL = filepath.Join(s.storagePath, *videoGen.LocalPath)
+				}
+			} else if videoGen.VideoURL != nil && *videoGen.VideoURL != "" {
+				videoURL = *videoGen.VideoURL
+			}
+
+			if videoURL != "" {
+				// 构建SceneClip（无转场）
+				duration := 5.0 // 默认5秒
+				if videoGen.Duration != nil && *videoGen.Duration > 0 {
+					duration = float64(*videoGen.Duration)
+				}
+
+				sceneClip := models.SceneClip{
+					SceneID:    scene.ID,
+					VideoURL:   videoURL,
+					StartTime:  0,
+					EndTime:    duration,
+					Duration:   duration,
+					Order:      order,
+					Transition: map[string]interface{}{"type": "none"},
+				}
+				sceneClips = append(sceneClips, sceneClip)
+			}
+		} else {
+			skippedScenes = append(skippedScenes, scene.StoryboardNumber)
+		}
+	}
+
+	// 检查是否至少有一个场景可以合成
+	if len(sceneClips) == 0 {
+		return nil, fmt.Errorf("no completed scene videos found for merge")
+	}
+
+	// 使用默认标题如果未提供
+	title := req.Title
+	if title == "" {
+		title = fmt.Sprintf("剧集合成 - 第%d集", episode.EpisodeNum)
+	}
+
+	// 调用现有的MergeVideos方法
+	mergeReq := &MergeVideoRequest{
+		EpisodeID: req.EpisodeID,
+		DramaID:   req.DramaID,
+		Title:     title,
+		Scenes:    sceneClips,
+		Provider:  "doubao", // 使用本地FFmpeg合成，provider仅作记录
+	}
+
+	return s.MergeVideos(mergeReq)
 }
 
 func (s *VideoMergeService) processMergeVideo(mergeID uint) {

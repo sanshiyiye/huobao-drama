@@ -808,6 +808,7 @@ export default {
     batchGenerateVideo: 'Video',
     oneClickAllImages: 'All Images',
     oneClickAllVideos: 'All Videos',
+    oneClickMerge: 'One-click Merge',
     videoTrack: 'Video Track',
     audioTrack: 'Audio Track',
     clearTrack: 'Clear Track',

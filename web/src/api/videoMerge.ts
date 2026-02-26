@@ -41,6 +41,15 @@ export const videoMergeAPI = {
     return response.merge
   },
 
+  async oneClickMerge(data: {
+    episode_id: string
+    drama_id: string
+    title?: string
+  }): Promise<VideoMerge> {
+    const response = await request.post<{ merge: VideoMerge }>('/video-merges/one-click', data)
+    return response.merge
+  },
+
   async getMerge(mergeId: number): Promise<VideoMerge> {
     const response = await request.get<{ merge: VideoMerge }>(`/video-merges/${mergeId}`)
     return response.merge

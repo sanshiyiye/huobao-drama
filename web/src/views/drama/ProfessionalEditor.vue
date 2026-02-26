@@ -158,7 +158,6 @@
                   </el-button>
                   <div class="batch-one-click-video-wrap">
                     <div class="batch-one-click-model-wrap">
-                      <label class="batch-one-click-model-label">{{ $t('video.model') }}</label>
                       <el-select
                         v-model="oneClickVideoModel"
                         :placeholder="$t('video.selectVideoModel')"
@@ -189,11 +188,15 @@
                       <span>{{ $t('video.oneClickAllVideos') }}</span>
                     </el-button>
                   </div>
+                  <el-button class="batch-flat-btn batch-flat-btn-lg" @click="handleOneClickMerge">
+                    <el-icon><VideoPlay /></el-icon>
+                    <span>{{ $t('video.oneClickMerge') }}</span>
+                  </el-button>
                 </div>
-                <!-- 一键生图/出片进度弹窗 -->
+                <!-- 一键生图/出片/合成进度弹窗 -->
                 <el-dialog
                   v-model="batchProgressVisible"
-                  :title="batchProgressType === 'frames' ? '一键生图' : '一键出片'"
+                  :title="batchProgressType === 'frames' ? '一键生图' : (batchProgressType === 'merge' ? '一键合成' : '一键出片')"
                   width="420px"
                   class="batch-progress-dialog"
                   :close-on-click-modal="false"
@@ -235,8 +238,21 @@
         </el-tabs>
       </div>
 
+      <!-- 编辑区折叠按钮 -->
+      <div class="edit-panel-toggle" :class="{ collapsed: !editPanelVisible }">
+        <button
+          type="button"
+          class="toggle-btn"
+          :title="editPanelVisible ? '收起编辑区' : '展开编辑区'"
+          @click="editPanelVisible = !editPanelVisible"
+        >
+          <el-icon><component :is="editPanelVisible ? DArrowRight : DArrowLeft" /></el-icon>
+          <span class="toggle-label">{{ editPanelVisible ? '参考图' : '编辑区' }}</span>
+        </button>
+      </div>
       <!-- 右侧编辑面板 -->
-      <EditPanel
+      <div v-show="editPanelVisible" class="edit-panel-wrap">
+        <EditPanel
         :active-tab="activeTab"
         :show-audio-tab="!!(currentModelCapability && !currentModelCapability.supportAudio)"
         @update:active-tab="activeTab = $event"
@@ -1428,6 +1444,7 @@
             </div>
         </template>
       </EditPanel>
+      </div>
     </div>
 
     <!-- 角色选择器对话框 -->
@@ -1718,6 +1735,8 @@ import {
   Box,
   Crop,
   FolderAdd,
+  DArrowLeft,
+  DArrowRight,
 } from "@element-plus/icons-vue";
 import { dramaAPI } from "@/api/drama";
 import { propAPI } from "@/api/prop";
@@ -1784,6 +1803,7 @@ const currentStoryboardId = ref<string | null>(null);
 const activeTab = ref("shot");
 /** 中间区域 Tab：media=媒体预览, video=视频编辑, batch=批量编辑 */
 const centerAreaTab = ref("video");
+const editPanelVisible = ref(true);
 /** 媒体预览 Tab 下按分镜分组的图片（切换至媒体预览时加载） */
 const mediaPreviewImagesByShot = ref<Record<string, ImageGeneration[]>>({});
 const showSceneSelector = ref(false);
@@ -1868,7 +1888,8 @@ const batchImageProgress = ref<{
   pending: number;
   processing: number;
 } | null>(null);
-const batchProgressType = ref<"frames" | "videos">("frames");
+const batchProgressType = ref<"frames" | "videos" | "merge">("frames");
+const mergeTaskId = ref<number | null>(null);
 let batchProgressTimerRef: ReturnType<typeof setTimeout> | null = null;
 const BATCH_IMAGE_PROGRESS_TIMEOUT_MS = 30 * 60 * 1000; // 30 分钟
 const previewImageUrl = ref<string>(""); // 预览大图的URL
@@ -2495,6 +2516,98 @@ const handleOneClickAllVideos = async () => {
   } catch (e: any) {
     ElMessage.error(e?.message || "一键出片请求失败");
   }
+};
+
+// 一键合成处理函数
+const handleOneClickMerge = async () => {
+  if (!episodeId.value) {
+    ElMessage.warning('请先选择剧集');
+    return;
+  }
+
+  try {
+    // 验证是否有分镜
+    if (!storyboards.value || storyboards.value.length === 0) {
+      ElMessage.warning('当前剧集没有分镜，无法合成视频');
+      return;
+    }
+
+    // 显示进度弹窗（复用现有的 batch 进度弹窗）
+    batchTaskId.value = ''; // 清空之前的任务ID
+    batchProgressType.value = 'merge';
+    batchProgressVisible.value = true;
+    batchProgressPercent.value = 0;
+    batchProgressMessage.value = '正在准备合成任务...';
+    batchResult.value = null;
+    batchImageProgress.value = null;
+    clearBatchProgressTimer();
+
+    // 调用后端API
+    const mergeResult = await videoMergeAPI.oneClickMerge({
+      episode_id: episodeId.value.toString(),
+      drama_id: dramaId.value.toString(),
+      title: `${drama.value?.title || '剧集'} - 第${episodeNumber.value || 1}集`
+    });
+
+    mergeTaskId.value = mergeResult.id;
+    batchProgressMessage.value = '合成任务已创建，正在处理...';
+
+    // 开始轮询合成进度
+    startMergeProgressPolling(mergeResult.id);
+  } catch (error: any) {
+    console.error('One-click merge failed:', error);
+    batchProgressMessage.value = error?.message || '合成失败';
+    ElMessage.error(error?.message || '一键合成失败，请重试');
+  }
+};
+
+// 合成进度轮询函数
+const startMergeProgressPolling = (mergeId: number) => {
+  const schedule = (fn: () => void, delay: number) => {
+    if (!batchProgressVisible.value) return;
+    batchProgressTimerRef = setTimeout(fn, delay);
+  };
+
+  const pollMerge = async () => {
+    if (!batchProgressVisible.value) return;
+    try {
+      const merge = await videoMergeAPI.getMerge(mergeId);
+
+      if (merge.status === 'completed') {
+        batchProgressPercent.value = 100;
+        batchProgressMessage.value = '合成完成！';
+        batchResult.value = {
+          total: 1,
+          success: 1,
+          failed: 0
+        };
+        ElMessage.success('视频合成成功');
+        return;
+      } else if (merge.status === 'failed') {
+        batchProgressPercent.value = 0;
+        batchProgressMessage.value = merge.error_msg || '合成失败';
+        batchResult.value = {
+          total: 1,
+          success: 0,
+          failed: 1
+        };
+        ElMessage.error(`合成失败: ${merge.error_msg || '未知错误'}`);
+        return;
+      } else {
+        // 处理中状态，更新进度
+        batchProgressMessage.value = merge.status === 'processing'
+          ? '正在合成视频...'
+          : '等待处理...';
+      }
+
+      schedule(pollMerge, 2500);
+    } catch (error) {
+      console.error('Poll merge progress failed:', error);
+      batchProgressMessage.value = '轮询失败，请稍后到视频合成列表查看';
+    }
+  };
+
+  schedule(pollMerge, 1000);
 };
 
 const closeBatchProgressDialog = () => {

@@ -102,3 +102,31 @@ func (h *VideoMergeHandler) DeleteMerge(c *gin.Context) {
 
 	response.Success(c, gin.H{"message": "Merge deleted successfully"})
 }
+
+func (h *VideoMergeHandler) OneClickMerge(c *gin.Context) {
+	var req struct {
+		EpisodeID string `json:"episode_id" binding:"required"`
+		DramaID   string `json:"drama_id" binding:"required"`
+		Title     string `json:"title"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request")
+		return
+	}
+
+	result, err := h.mergeService.OneClickMerge(&services2.OneClickMergeRequest{
+		EpisodeID: req.EpisodeID,
+		DramaID:   req.DramaID,
+		Title:     req.Title,
+	})
+	if err != nil {
+		h.log.Errorw("Failed to one-click merge", "error", err)
+		response.InternalError(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"message": "One-click merge task created",
+		"merge":   result,
+	})
+}

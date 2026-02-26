@@ -583,6 +583,33 @@ func (s *BatchService) generateVideoForStoryboard(dramaID string, sb *models.Sto
 		req.LastFrameLocalPath = nil
 	}
 
-	_, err := s.videoGenService.GenerateVideo(req)
-	return err
+	// 调用视频生成服务
+	videoGen, err := s.videoGenService.GenerateVideo(req)
+	if err != nil {
+		return err
+	}
+
+	// 等待视频生成完成
+	const maxWaitTime = 5 * time.Minute
+	const pollInterval = 5 * time.Second
+	deadline := time.Now().Add(maxWaitTime)
+
+	for time.Now().Before(deadline) {
+		var currentVideoGen models.VideoGeneration
+		if err := s.db.First(&currentVideoGen, videoGen.ID).Error; err != nil {
+			return err
+		}
+
+		if currentVideoGen.Status == models.VideoStatusCompleted {
+			return nil
+		}
+
+		if currentVideoGen.Status == models.VideoStatusFailed {
+			return fmt.Errorf("视频生成失败")
+		}
+
+		time.Sleep(pollInterval)
+	}
+
+	return fmt.Errorf("视频生成超时")
 }
