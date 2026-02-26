@@ -282,3 +282,21 @@
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* 一键生图/出片进度弹窗 */
+.batch-progress-dialog .el-dialog__body {
+  padding: 16px 20px;
+}
+.batch-progress-body {
+  text-align: center;
+}
+.batch-progress-msg {
+  margin: 12px 0 0;
+  color: var(--text-secondary, #666);
+  font-size: 14px;
+}
+.batch-progress-summary {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-primary, #333);
+}

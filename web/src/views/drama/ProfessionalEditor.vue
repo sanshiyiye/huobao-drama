@@ -156,11 +156,78 @@
                     <el-icon><Picture /></el-icon>
                     <span>{{ $t('video.oneClickAllImages') }}</span>
                   </el-button>
-                  <el-button class="batch-flat-btn batch-flat-btn-lg" @click="handleOneClickAllVideos">
-                    <el-icon><VideoPlay /></el-icon>
-                    <span>{{ $t('video.oneClickAllVideos') }}</span>
-                  </el-button>
+                  <div class="batch-one-click-video-wrap">
+                    <div class="batch-one-click-model-wrap">
+                      <label class="batch-one-click-model-label">{{ $t('video.model') }}</label>
+                      <el-select
+                        v-model="oneClickVideoModel"
+                        :placeholder="$t('video.selectVideoModel')"
+                        size="default"
+                        class="batch-one-click-model-select"
+                        filterable
+                      >
+                        <el-option
+                          v-for="m in batchVideoModelsFirstLast"
+                          :key="m.id"
+                          :label="m.name"
+                          :value="m.id"
+                        >
+                          <div class="batch-one-click-model-option">
+                            <span>{{ m.name }}</span>
+                            <span class="batch-one-click-model-tags">
+                              <template v-if="m.supportTextOnly">文生</template>
+                              <template v-if="m.supportSingleImage"> | 单图</template>
+                              <template v-if="m.supportFirstLastFrame"> | 首尾帧</template>
+                              <template v-if="m.supportAudio"> | 有声</template>
+                            </span>
+                          </div>
+                        </el-option>
+                      </el-select>
+                    </div>
+                    <el-button class="batch-flat-btn batch-flat-btn-lg" @click="handleOneClickAllVideos">
+                      <el-icon><VideoPlay /></el-icon>
+                      <span>{{ $t('video.oneClickAllVideos') }}</span>
+                    </el-button>
+                  </div>
                 </div>
+                <!-- 一键生图/出片进度弹窗 -->
+                <el-dialog
+                  v-model="batchProgressVisible"
+                  :title="batchProgressType === 'frames' ? '一键生图' : '一键出片'"
+                  width="420px"
+                  class="batch-progress-dialog"
+                  :close-on-click-modal="false"
+                  @close="closeBatchProgressDialog"
+                >
+                  <div class="batch-progress-body">
+                    <el-progress
+                      :percentage="batchProgressPercent"
+                      :status="batchImageProgress ? (batchImageProgress.failed > 0 ? 'warning' : 'success') : batchResult ? (batchResult.failed > 0 ? 'warning' : 'success') : undefined"
+                    />
+                    <p class="batch-progress-msg">{{ batchProgressMessage }}</p>
+                    <template v-if="batchResult">
+                      <p class="batch-progress-summary">
+                        已完成 {{ batchResult.success }}/{{ batchResult.total }} 个分镜
+                        <template v-if="batchResult.failed > 0">（成功 {{ batchResult.success }}，失败 {{ batchResult.failed }}）</template>
+                      </p>
+                    </template>
+                    <template v-if="batchImageProgress && batchImageProgress.expected_total > 0">
+                      <p class="batch-progress-summary">
+                        已完成 {{ batchImageProgress.completed + batchImageProgress.failed }}/{{ batchImageProgress.expected_total }} 张图片（成功 {{ batchImageProgress.completed }}，失败 {{ batchImageProgress.failed }}）
+                      </p>
+                    </template>
+                  </div>
+                  <template #footer>
+                    <el-button
+                      v-if="batchResult && batchResult.failed > 0"
+                      type="warning"
+                      @click="handleRetryFailedFrames"
+                    >
+                      重试失败分镜
+                    </el-button>
+                    <el-button type="primary" @click="closeBatchProgressDialog">关闭</el-button>
+                  </template>
+                </el-dialog>
               </template>
               <el-empty v-else :description="$t('storyboard.noStoryboard')" class="empty-center-tab" />
             </div>
@@ -1661,6 +1728,7 @@ import { aiAPI } from "@/api/ai";
 import { assetAPI } from "@/api/asset";
 import { videoMergeAPI } from "@/api/videoMerge";
 import { taskAPI } from "@/api/task";
+import { batchAPI } from "@/api/batch";
 import type { ImageGeneration } from "@/types/image";
 import type { VideoGeneration } from "@/types/video";
 import type { AIServiceConfig } from "@/types/ai";
@@ -1785,6 +1853,24 @@ const selectedVideoModel = ref<string>("");
 const selectedReferenceMode = ref<string>(""); // 参考图模式：single, first_last, multiple, none
 // 批量出片每镜头选择的视频模型，key 为 shot.id
 const batchShotVideoModel = ref<Record<string, string>>({});
+// 一键出片使用的视频模型（与批量出片旁的下拉一致）
+const oneClickVideoModel = ref<string>("");
+// 一键生图/出片进度弹窗
+const batchProgressVisible = ref(false);
+const batchProgressPercent = ref(0);
+const batchProgressMessage = ref("");
+const batchTaskId = ref("");
+const batchResult = ref<{ total: number; success: number; failed: number; failed_storyboard_ids?: number[] } | null>(null);
+const batchImageProgress = ref<{
+  expected_total: number;
+  completed: number;
+  failed: number;
+  pending: number;
+  processing: number;
+} | null>(null);
+const batchProgressType = ref<"frames" | "videos">("frames");
+let batchProgressTimerRef: ReturnType<typeof setTimeout> | null = null;
+const BATCH_IMAGE_PROGRESS_TIMEOUT_MS = 30 * 60 * 1000; // 30 分钟
 const previewImageUrl = ref<string>(""); // 预览大图的URL
 const videoModelCapabilities = ref<VideoModelCapability[]>([]);
 let videoPollingTimer: any = null;
@@ -2027,6 +2113,10 @@ const loadVideoModels = async () => {
         };
       },
     );
+    if (!oneClickVideoModel.value && videoModelCapabilities.value.length > 0) {
+      const firstLast = videoModelCapabilities.value.find((m) => m.supportFirstLastFrame);
+      oneClickVideoModel.value = (firstLast || videoModelCapabilities.value[0]).id;
+    }
   } catch (error: any) {
     console.error("加载视频模型配置失败:", error);
     ElMessage.error("加载视频模型失败");
@@ -2263,12 +2353,156 @@ const handleBatchGenerateVideo = async (shot: Storyboard) => {
   }
 };
 
-const handleOneClickAllImages = () => {
-  ElMessage.info("一键生图：请先在右侧为各镜头生成图片后，在媒体预览中查看");
+const POLL_INTERVAL = 2500;
+
+const clearBatchProgressTimer = () => {
+  if (batchProgressTimerRef != null) {
+    clearTimeout(batchProgressTimerRef);
+    batchProgressTimerRef = null;
+  }
 };
 
-const handleOneClickAllVideos = () => {
-  ElMessage.info("一键出片：请先在右侧为各镜头生成视频后，在媒体预览或视频编辑中查看");
+const startBatchProgressPolling = (taskId: string, type: "frames" | "videos") => {
+  batchTaskId.value = taskId;
+  batchProgressType.value = type;
+  batchProgressVisible.value = true;
+  batchProgressPercent.value = 0;
+  batchProgressMessage.value = type === "frames" ? "正在提交一键生图任务…" : "正在提交一键出片任务…";
+  batchResult.value = null;
+  batchImageProgress.value = null;
+  clearBatchProgressTimer();
+
+  const schedule = (fn: () => void, delay: number) => {
+    if (!batchProgressVisible.value) return;
+    batchProgressTimerRef = setTimeout(fn, delay);
+  };
+
+  const pollTask = async () => {
+    if (!batchProgressVisible.value) return;
+    try {
+      const task = await taskAPI.getStatus(taskId);
+      batchProgressPercent.value = task.progress ?? 0;
+      batchProgressMessage.value = task.message || (task.progress ? `处理中 ${task.progress}%` : "处理中…");
+      if (task.status === "completed") {
+        try {
+          batchResult.value = typeof task.result === "string" ? JSON.parse(task.result) : task.result;
+        } catch {
+          batchResult.value = { total: 0, success: 0, failed: 0 };
+        }
+        if (type === "frames" && episodeId.value != null) {
+          batchProgressMessage.value = "任务已提交，正在生成图片…";
+          pollImageProgress(episodeId.value.toString(), Date.now());
+          return;
+        }
+        batchProgressMessage.value = "全部完成";
+        return;
+      }
+      if (task.status === "failed") {
+        batchProgressMessage.value = task.error || "任务失败";
+        return;
+      }
+      schedule(pollTask, POLL_INTERVAL);
+    } catch (e) {
+      batchProgressMessage.value = "轮询失败，请稍后到任务列表查看";
+    }
+  };
+
+  const pollImageProgress = async (epId: string, phase2StartTime: number) => {
+    if (!batchProgressVisible.value) return;
+    if (Date.now() - phase2StartTime > BATCH_IMAGE_PROGRESS_TIMEOUT_MS) {
+      batchProgressMessage.value = "已超时，部分图片可能仍在生成，请稍后在「镜头图片」中查看。";
+      return;
+    }
+    try {
+      const p = await batchAPI.getBatchImageProgress(epId);
+      batchImageProgress.value = p;
+      const done = p.completed + p.failed;
+      const total = p.expected_total;
+      if (total > 0) {
+        batchProgressPercent.value = Math.min(100, Math.round((done / total) * 100));
+        if (done >= total) {
+          batchProgressMessage.value = `已完成 ${done}/${total} 张图片（成功 ${p.completed}，失败 ${p.failed}）`;
+          return;
+        }
+        batchProgressMessage.value = `生成中 ${done}/${total} 张图片（成功 ${p.completed}，失败 ${p.failed}）`;
+      }
+      schedule(() => pollImageProgress(epId, phase2StartTime), POLL_INTERVAL);
+    } catch (e) {
+      batchProgressMessage.value = "获取进度失败，请稍后在「镜头图片」中查看。";
+    }
+  };
+
+  schedule(pollTask, POLL_INTERVAL);
+};
+
+const handleOneClickAllImages = async () => {
+  if (!episodeId.value) {
+    ElMessage.warning("请先选择剧集");
+    return;
+  }
+  try {
+    const data = await batchAPI.generateFrames(episodeId.value.toString());
+    const taskId = data?.task_id;
+    if (!taskId) {
+      ElMessage.error("未返回任务 ID");
+      return;
+    }
+    startBatchProgressPolling(taskId, "frames");
+  } catch (e: any) {
+    ElMessage.error(e?.message || "一键生图请求失败");
+  }
+};
+
+const handleRetryFailedFrames = async () => {
+  if (!batchResult.value || batchResult.value.failed === 0) {
+    return;
+  }
+
+  try {
+    const data = await batchAPI.retryFailedFrames(
+      episodeId.value.toString(),
+      batchResult.value.failed_storyboard_ids || []
+    );
+    const taskId = data?.task_id;
+    if (!taskId) {
+      ElMessage.error("未返回任务 ID");
+      return;
+    }
+    startBatchProgressPolling(taskId, "frames");
+  } catch (e: any) {
+    ElMessage.error(e?.message || "重试请求失败");
+  }
+};
+
+const handleOneClickAllVideos = async () => {
+  if (!episodeId.value) {
+    ElMessage.warning("请先选择剧集");
+    return;
+  }
+  const model = oneClickVideoModel.value || selectedVideoModel.value;
+  if (!model) {
+    ElMessage.warning("请先选择一键出片使用的视频模型");
+    return;
+  }
+  try {
+    const data = await batchAPI.generateVideos(episodeId.value.toString(), model);
+    const taskId = data?.task_id;
+    if (!taskId) {
+      ElMessage.error("未返回任务 ID");
+      return;
+    }
+    startBatchProgressPolling(taskId, "videos");
+  } catch (e: any) {
+    ElMessage.error(e?.message || "一键出片请求失败");
+  }
+};
+
+const closeBatchProgressDialog = () => {
+  batchProgressVisible.value = false;
+  batchTaskId.value = "";
+  batchResult.value = null;
+  batchImageProgress.value = null;
+  clearBatchProgressTimer();
 };
 
 // 当前模型支持的参考图模式

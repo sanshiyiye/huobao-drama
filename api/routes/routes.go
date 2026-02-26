@@ -49,9 +49,12 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	}
 	storyboardHandler := handlers2.NewStoryboardHandler(db, cfg, log)
 	sceneHandler := handlers2.NewSceneHandler(db, log, imageGenService)
-	taskHandler := handlers2.NewTaskHandler(db, log)
-	framePromptService := services2.NewFramePromptService(db, cfg, log)
-	framePromptHandler := handlers2.NewFramePromptHandler(framePromptService, log)
+		taskHandler := handlers2.NewTaskHandler(db, log)
+		framePromptService := services2.NewFramePromptService(db, cfg, log)
+		framePromptHandler := handlers2.NewFramePromptHandler(framePromptService, log)
+		batchService := services2.NewBatchService(db, services2.NewTaskService(db, log), imageGenService, framePromptService,
+			services2.NewVideoGenerationService(db, transferService, localStoragePtr, aiService, log, promptI18n), log)
+		batchHandler := handlers2.NewBatchHandler(batchService, log)
 	audioExtractionHandler := handlers2.NewAudioExtractionHandler(log, cfg.Storage.LocalPath)
 	settingsHandler := handlers2.NewSettingsHandler(cfg, log)
 	propHandler := handlers2.NewPropHandler(db, cfg, log, aiService, imageGenService)
@@ -137,6 +140,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 			episodes.POST("/:episode_id/characters/extract", characterLibraryHandler.ExtractCharacters)
 			episodes.POST("/:episode_id/style/extract", characterLibraryHandler.ExtractStyle)
 			episodes.GET("/:episode_id/storyboards", sceneHandler.GetStoryboardsForEpisode)
+			episodes.GET("/:episode_id/batch-image-progress", batchHandler.GetBatchImageProgress)
 			episodes.POST("/:episode_id/finalize", dramaHandler.FinalizeEpisode)
 			episodes.GET("/:episode_id/download", dramaHandler.DownloadEpisodeVideo)
 		}
@@ -146,6 +150,14 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 		{
 			tasks.GET("/:task_id", taskHandler.GetTaskStatus)
 			tasks.GET("", taskHandler.GetResourceTasks)
+		}
+
+		// 批量操作：一键生图、一键出片
+		batch := api.Group("/batch")
+		{
+			batch.POST("/generate-frames", batchHandler.BatchGenerateFrames)
+			batch.POST("/generate-videos", batchHandler.BatchGenerateVideos)
+			batch.POST("/retry-failed-frames", batchHandler.BatchRetryFailedFrames)
 		}
 
 		// 场景路由
