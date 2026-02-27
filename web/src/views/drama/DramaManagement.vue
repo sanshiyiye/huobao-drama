@@ -865,6 +865,20 @@
               </div>
             </div>
           </el-form-item>
+          <el-form-item label="短剧类型" prop="drama_mode">
+            <el-select v-model="editProjectForm.drama_mode" placeholder="请选择短剧类型" size="large" style="width: 100%">
+              <el-option label="VO 主导模式" value="VO主导模式" />
+              <el-option label="对话主导模式" value="对话主导模式" />
+              <el-option label="混合模式" value="混合模式" />
+              <el-option label="动作/视觉模式" value="动作/视觉模式" />
+            </el-select>
+            <div class="help-text">
+              <p>• VO 主导模式：旁白 &gt; 50%，旁白不切碎，微动为主</p>
+              <p>• 对话主导模式：对话 &gt; 50%，每句对话可单独成镜</p>
+              <p>• 混合模式（默认）：旁白和对话各半</p>
+              <p>• 动作/视觉模式：旁白极少，靠画面讲故事</p>
+            </div>
+          </el-form-item>
         </el-form>
         <template #footer>
           <div class="dialog-footer">
@@ -983,6 +997,7 @@ const editProjectForm = ref({
   style: "ghibli",
   plot_style: "",
   aspect_ratio: "16:9",
+  drama_mode: "混合模式",
 });
 
 const newCharacter = ref({
@@ -1117,6 +1132,7 @@ const openEditProjectDialog = () => {
     style: drama.value.style || "ghibli",
     plot_style: drama.value.plot_style || "",
     aspect_ratio: drama.value.aspect_ratio || "16:9",
+    drama_mode: drama.value.drama_mode || "混合模式",
   };
   editProjectDialogVisible.value = true;
 };
@@ -1135,6 +1151,7 @@ const saveEditProject = async () => {
       style: editProjectForm.value.style,
       plot_style: editProjectForm.value.plot_style,
       aspect_ratio: editProjectForm.value.aspect_ratio,
+      drama_mode: editProjectForm.value.drama_mode,
     });
     ElMessage.success("保存成功");
     editProjectDialogVisible.value = false;
@@ -2041,5 +2058,16 @@ onMounted(() => {
   background: var(--bg-secondary);
   color: var(--text-primary);
   box-shadow: 0 0 0 1px var(--border-primary) inset;
+}
+
+.help-text {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.5;
+}
+
+.help-text p {
+  margin: 4px 0;
 }
 </style>

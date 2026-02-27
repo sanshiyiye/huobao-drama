@@ -175,8 +175,9 @@ const refreshImages = async () => {
   loading.value = true;
   try {
     const data = await listImages();
+    const normalized = Array.isArray(data) ? data : [];
     // 兼容接口 snake_case，便于模板使用
-    images.value = data.map((item: any) => ({
+    images.value = normalized.map((item: any) => ({
       ...item,
       isAssociated: item.is_associated ?? item.isAssociated,
       associatedType: item.associated_type ?? item.associatedType,

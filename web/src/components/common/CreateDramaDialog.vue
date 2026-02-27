@@ -67,6 +67,21 @@
           </div>
         </div>
       </el-form-item>
+
+      <el-form-item label="短剧类型" prop="drama_mode">
+        <el-select v-model="form.drama_mode" placeholder="请选择短剧类型" size="large" style="width: 100%">
+          <el-option label="VO 主导模式" value="VO主导模式" />
+          <el-option label="对话主导模式" value="对话主导模式" />
+          <el-option label="混合模式" value="混合模式" />
+          <el-option label="动作/视觉模式" value="动作/视觉模式" />
+        </el-select>
+        <div class="help-text">
+          <p>• VO 主导模式：旁白 &gt; 50%，旁白不切碎，微动为主</p>
+          <p>• 对话主导模式：对话 &gt; 50%，每句对话可单独成镜</p>
+          <p>• 混合模式（默认）：旁白和对话各半</p>
+          <p>• 动作/视觉模式：旁白极少，靠画面讲故事</p>
+        </div>
+      </el-form-item>
     </el-form>
 
     <template #footer>
@@ -171,6 +186,7 @@ const form = reactive<CreateDramaRequest>({
   title: "",
   description: "",
   style: "ghibli",
+  drama_mode: "混合模式",
 });
 
 // Validation rules / 验证规则
@@ -194,6 +210,7 @@ const rules: FormRules = {
 const handleClosed = () => {
   form.title = "";
   form.description = "";
+  form.drama_mode = "混合模式";
   formRef.value?.resetFields();
 };
 
@@ -352,5 +369,16 @@ const handleSubmit = async () => {
 
 .dialog-footer .el-button {
   min-width: 100px;
+}
+
+.help-text {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.5;
+}
+
+.help-text p {
+  margin: 4px 0;
 }
 </style>

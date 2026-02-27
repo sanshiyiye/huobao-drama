@@ -33,6 +33,7 @@ type CreateDramaRequest struct {
 	Genre       string `json:"genre"`
 	Style       string `json:"style"`
 	PlotStyle   string `json:"plot_style"`
+	DramaMode   string `json:"drama_mode" binding:"omitempty,oneof=VO主导模式 对话主导模式 混合模式 动作/视觉模式"`
 	Tags        string `json:"tags"`
 }
 
@@ -45,6 +46,7 @@ type UpdateDramaRequest struct {
 	Tags        string `json:"tags"`
 	Status      string `json:"status" binding:"omitempty,oneof=draft planning production completed archived"`
 	AspectRatio string `json:"aspect_ratio" binding:"omitempty,oneof=16:9 9:16 1:1"`
+	DramaMode   string `json:"drama_mode" binding:"omitempty,oneof=VO主导模式 对话主导模式 混合模式 动作/视觉模式"`
 }
 
 type DramaListQuery struct {
@@ -61,6 +63,7 @@ func (s *DramaService) CreateDrama(req *CreateDramaRequest) (*models.Drama, erro
 		Status:      "draft",
 		Style:       "ghibli",       // 默认风格
 		AspectRatio: "16:9",         // 默认宽高比
+		DramaMode:   "混合模式",      // 默认短剧模式
 	}
 
 	if req.Description != "" {
@@ -74,6 +77,9 @@ func (s *DramaService) CreateDrama(req *CreateDramaRequest) (*models.Drama, erro
 	}
 	if req.PlotStyle != "" {
 		drama.PlotStyle = req.PlotStyle
+	}
+	if req.DramaMode != "" {
+		drama.DramaMode = req.DramaMode
 	}
 
 	if err := s.db.Create(drama).Error; err != nil {
@@ -299,6 +305,9 @@ func (s *DramaService) UpdateDrama(dramaID string, req *UpdateDramaRequest) (*mo
 	}
 	if req.AspectRatio != "" {
 		updates["aspect_ratio"] = req.AspectRatio
+	}
+	if req.DramaMode != "" {
+		updates["drama_mode"] = req.DramaMode
 	}
 
 	updates["updated_at"] = time.Now()

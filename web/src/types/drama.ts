@@ -9,6 +9,7 @@ export interface Drama {
   style?: string
   plot_style?: string
   aspect_ratio?: string
+  drama_mode?: string
   total_episodes: number
   total_duration: number
   total_scenes?: number
@@ -85,7 +86,7 @@ export interface Storyboard {
   location?: string
   time?: string
   duration?: number
-  dialogue?: string
+  dialogue?: string // 使用【旁白段】/【对话段】标注区分
   action?: string
   atmosphere?: string
   image_prompt?: string
@@ -128,6 +129,7 @@ export interface CreateDramaRequest {
   genre?: string
   style?: string
   plot_style?: string
+  drama_mode?: string
   tags?: string
 }
 
@@ -140,6 +142,7 @@ export interface UpdateDramaRequest {
   tags?: string
   status?: DramaStatus
   aspect_ratio?: string
+  drama_mode?: string
 }
 
 export interface DramaListQuery {

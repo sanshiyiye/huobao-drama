@@ -15,6 +15,7 @@ type Drama struct {
 	Style         string         `gorm:"type:varchar(50);default:'realistic'" json:"style"` // 艺术风格
 	PlotStyle     string         `gorm:"type:varchar(50)" json:"plot_style"` // 剧情风格
 	AspectRatio   string         `gorm:"type:varchar(10);default:'16:9'" json:"aspect_ratio"`
+	DramaMode     string         `gorm:"type:varchar(50);default:'混合模式'" json:"drama_mode"` // 短剧类型模式
 	TotalEpisodes int            `gorm:"default:1" json:"total_episodes"`
 	TotalDuration int            `gorm:"default:0" json:"total_duration"`
 	Status        string         `gorm:"type:varchar(20);default:'draft';not null" json:"status"`
@@ -112,7 +113,7 @@ type Storyboard struct {
 	VideoPrompt      *string        `gorm:"type:text" json:"video_prompt"`
 	BgmPrompt        *string        `gorm:"type:text" json:"bgm_prompt"`
 	SoundEffect      *string        `gorm:"size:255" json:"sound_effect"`
-	Dialogue         *string        `gorm:"type:text" json:"dialogue"`
+	Dialogue         *string        `gorm:"type:text" json:"dialogue"` // 使用【旁白段】/【对话段】标注区分
 	Description      *string        `gorm:"type:text" json:"description"`
 	Duration         int            `gorm:"default:5" json:"duration"`
 	ComposedImage    *string        `gorm:"type:text" json:"composed_image"`

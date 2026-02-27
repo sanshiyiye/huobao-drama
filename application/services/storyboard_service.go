@@ -47,7 +47,7 @@ type Storyboard struct {
 	SceneID     *uint  `json:"scene_id"`     // 背景ID（AI直接返回，可为null）
 	Movement    string `json:"movement"`     // 运镜
 	Action      string `json:"action"`       // 动作
-	Dialogue    string `json:"dialogue"`     // 对话/独白
+	Dialogue    string `json:"dialogue"`     // 对话/独白（包含【旁白段】/【对话段】标注）
 	Result      string `json:"result"`       // 画面结果
 	Atmosphere  string `json:"atmosphere"`   // 环境氛围
 	Emotion     string `json:"emotion"`      // 情绪
@@ -66,6 +66,7 @@ type GenerateStoryboardResult struct {
 func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (string, error) {
 	// 从数据库获取剧集信息
 	var episode models.Episode
+	var drama models.Drama
 
 	err := s.db.Table("episodes").
 		Select("episodes.id, episodes.script_content, episodes.description, episodes.drama_id").
@@ -75,6 +76,11 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 
 	if err != nil {
 		return "", fmt.Errorf("剧集不存在或无权限访问")
+	}
+
+	// 获取短剧信息以获取drama_mode
+	if err := s.db.Where("id = ?", episode.DramaID).First(&drama).Error; err != nil {
+		s.log.Warnw("Failed to get drama info", "error", err)
 	}
 
 	// 获取剧本内容
@@ -131,11 +137,111 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 	sceneListLabel := s.promptI18n.FormatUserPrompt("scene_list_label")
 	sceneConstraint := s.promptI18n.FormatUserPrompt("scene_constraint")
 
+	// 根据 drama_mode 构建模式特定的提示词
+	var modePrefixPrompt string
+	var modeSuffixPrompt string
+	var isVOMode bool = false
+
+	switch drama.DramaMode {
+	case "VO主导模式":
+		isVOMode = true
+		modePrefixPrompt = `
+【VO短剧·分镜铁则（最高优先级·强制遵守）】
+1. 旁白存在 → 人物只做轻微动作/状态，禁止开口说话、无台词、无对话
+2. 只有出现「角色台词/对话」→ 旁白立刻停止，进入表演模式
+3. 旁白段落可配：镜头运动、环境音、BGM、人物微动，画面允许动态
+4. 一整段连续旁白 → 不切碎成多个分镜，保证旁白流畅！连续旁白可以放在一个分镜中，用较长的duration（8-15秒）
+
+【dialogue 字段标注格式】
+- 旁白内容格式：【旁白段】历史的车轮继续向前...
+- 对话内容格式：【对话段】梁末帝说:"我不需要你来背负这个责任..."
+- 一个镜头中，【旁白段】和【对话段】不能同时出现，必须二选一
+
+【人物行为】
+- 【旁白模式】：只写轻微动作（站立、行走、抬头、低头、发呆、静止）
+- 【表演模式】：可写大幅度动作、情绪爆发、肢体表演
+
+【禁止行为】
+- ❌ 禁止旁白存在时，让人物开口说台词/吼叫/对话
+- ❌ 禁止把连续旁白切碎成多个分镜
+`
+		modeSuffixPrompt = `
+【VO模式特别说明】
+- 连续旁白可以合并在一个分镜中，不要为了"单一动作"而拆分
+- 旁白模式下，duration可以设置为8-15秒，以适应较长的旁白内容
+- 重点是保证旁白的流畅性，而不是机械地拆分成多个短镜头
+`
+	case "对话主导模式":
+		modePrefixPrompt = `
+【对话主导模式·分镜原则】
+1. 每句对话优先成镜，确保对话节奏清晰
+2. 对话场景可以配合适当的动作和表情
+3. 重点突出角色对话时的情绪变化
+`
+		modeSuffixPrompt = ""
+	case "动作/视觉模式":
+		modePrefixPrompt = `
+【动作/视觉模式·分镜原则】
+1. 旁白极少，靠画面讲故事
+2. 重点突出动作设计和视觉冲击力
+3. 用画面而非语言表达剧情
+`
+		modeSuffixPrompt = ""
+	default: // 混合模式
+		modePrefixPrompt = ""
+		modeSuffixPrompt = ""
+	}
+
+	// 构建"特别要求"部分，VO模式下要弱化拆分要求
+	var specialRequirements string
+	if isVOMode {
+		specialRequirements = `
+**特别要求**：
+- **完整呈现剧情内容**，不要遗漏重要信息
+- 连续旁白可以合并在一个分镜中，使用较长的duration（8-15秒）
+- 区分主镜（is_primary: true）和链接镜（is_primary: false）
+- 确保情绪节奏有变化
+- **duration字段至关重要**：准确估算每个镜头时长，旁白段落可以设为8-15秒
+- 严格按照JSON格式输出
+`
+	} else {
+		specialRequirements = `
+**特别要求**：
+- **【极其重要】必须100%%完整拆解整个剧本，不得省略、跳过、压缩任何剧情内容**
+- **从剧本第一个字到最后一个字，逐句逐段转换为分镜**
+- **每个对话、每个动作、每个场景转换都必须有对应的分镜**
+- 剧本越长，分镜数量越多（短剧本15-30个，中等剧本30-60个，长剧本60-100个甚至更多）
+- **宁可分镜多，也不要遗漏剧情**：一个长场景可拆分为多个连续分镜
+- 每个镜头只描述一个主要动作
+- 区分主镜（is_primary: true）和链接镜（is_primary: false）
+- 确保情绪节奏有变化
+- **duration字段至关重要**：准确估算每个镜头时长，这将用于计算整集时长
+- 严格按照JSON格式输出
+`
+	}
+
+	// 构建"禁止行为"部分，VO模式下要调整
+	var forbiddenActions string
+	if isVOMode {
+		forbiddenActions = `
+**【禁止行为】**：
+- ❌ 禁止用一个镜头概括多个场景
+- ❌ 禁止跳过任何剧情内容
+- ❌ 禁止旁白存在时，让人物开口说台词/吼叫/对话
+- ❌ 禁止把连续旁白切碎成多个分镜
+`
+	} else {
+		forbiddenActions = `
+**【禁止行为】**：
+- ❌ 禁止用一个镜头概括多个场景
+- ❌ 禁止跳过任何对话或独白
+- ❌ 禁止省略剧情发展过程
+- ❌ 禁止合并本应分开的镜头
+- ✅ 正确做法：剧本有多少内容，就拆解出对应数量的分镜，确保观众看完所有分镜能完整了解剧情
+`
+	}
+
 	prompt := fmt.Sprintf(`%s
-
-%s
-%s
-
 %s
 
 %s
@@ -146,6 +252,9 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 %s
 %s
 
+%s
+
+%s
 %s
 
 【剧本原文】
@@ -239,7 +348,7 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 - 例如：如果镜头发生在"城市公寓卧室·凌晨"，应选择id为1的场景背景
 
 **duration时长估算规则（秒）**：
-- **所有镜头时长必须在4-12秒范围内**，确保节奏合理流畅
+%s
 - **综合估算原则**：时长由对话内容、动作复杂度、情绪节奏三方面综合决定
 
 **估算步骤**：
@@ -271,24 +380,9 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 
 **重要**：准确估算每个镜头时长，所有分镜时长之和将作为剧集总时长
 
-**特别要求**：
-- **【极其重要】必须100%%完整拆解整个剧本，不得省略、跳过、压缩任何剧情内容**
-- **从剧本第一个字到最后一个字，逐句逐段转换为分镜**
-- **每个对话、每个动作、每个场景转换都必须有对应的分镜**
-- 剧本越长，分镜数量越多（短剧本15-30个，中等剧本30-60个，长剧本60-100个甚至更多）
-- **宁可分镜多，也不要遗漏剧情**：一个长场景可拆分为多个连续分镜
-- 每个镜头只描述一个主要动作
-- 区分主镜（is_primary: true）和链接镜（is_primary: false）
-- 确保情绪节奏有变化
-- **duration字段至关重要**：准确估算每个镜头时长，这将用于计算整集时长
-- 严格按照JSON格式输出
+%s
 
-**【禁止行为】**：
-- ❌ 禁止用一个镜头概括多个场景
-- ❌ 禁止跳过任何对话或独白
-- ❌ 禁止省略剧情发展过程
-- ❌ 禁止合并本应分开的镜头
-- ✅ 正确做法：剧本有多少内容，就拆解出对应数量的分镜，确保观众看完所有分镜能完整了解剧情
+%s
 
 **【关键】场景描述详细度要求**（这些描述将直接用于视频生成模型）：
 1. **时间(time)字段**：必须包含≥15字的详细描述
@@ -316,7 +410,13 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 - 包含感官细节：视觉、听觉、触觉、嗅觉
 - 描述光线、色彩、质感、动态
 - 为视频生成AI提供足够的画面构建信息
-- 避免抽象词汇，使用具象的视觉化描述`, systemPrompt, scriptLabel, taskLabel, taskInstruction, charListLabel, characterList, charConstraint, sceneListLabel, sceneList, sceneConstraint, scriptContent)
+- 避免抽象词汇，使用具象的视觉化描述
+%s`, modePrefixPrompt, systemPrompt, scriptLabel, taskLabel, taskInstruction, charListLabel, characterList, charConstraint, sceneListLabel, sceneList, sceneConstraint, scriptContent, func() string {
+		if isVOMode {
+			return "- **旁白模式下时长可以在4-15秒范围内**，确保长旁白有足够时间播放"
+		}
+		return "- **所有镜头时长必须在4-12秒范围内**，确保节奏合理流畅"
+	}(), specialRequirements, forbiddenActions, modeSuffixPrompt)
 
 	// 创建异步任务
 	task, err := s.taskService.CreateTask("storyboard_generation", episodeID)
@@ -765,7 +865,7 @@ func (s *StoryboardService) saveStoryboards(episodeID string, storyboards []Stor
 
 		// 保存新的分镜头
 		for _, sb := range storyboards {
-			// 构建描述信息，包含对话
+			// 构建描述信息，包含对话（对话中使用【旁白段】/【对话段】标注）
 			description := fmt.Sprintf("【镜头类型】%s\n【运镜】%s\n【动作】%s\n【对话】%s\n【结果】%s\n【情绪】%s",
 				sb.ShotType, sb.Movement, sb.Action, sb.Dialogue, sb.Result, sb.Emotion)
 
@@ -774,7 +874,7 @@ func (s *StoryboardService) saveStoryboards(episodeID string, storyboards []Stor
 			var imagePromptPtr *string
 			videoPrompt := s.generateVideoPrompt(sb) // 专用于视频生成
 
-			// 处理 dialogue 字段
+			// 处理 dialogue 字段（包含【旁白段】/【对话段】标注）
 			var dialoguePtr *string
 			if sb.Dialogue != "" {
 				dialoguePtr = &sb.Dialogue
@@ -960,7 +1060,7 @@ type CreateStoryboardRequest struct {
 	Action           *string `json:"action"`
 	Result           *string `json:"result"`
 	Atmosphere       *string `json:"atmosphere"`
-	Dialogue         *string `json:"dialogue"`
+	Dialogue         *string `json:"dialogue"` // 使用【旁白段】/【对话段】标注区分
 	BgmPrompt        *string `json:"bgm_prompt"`
 	SoundEffect      *string `json:"sound_effect"`
 	Duration         int     `json:"duration"`

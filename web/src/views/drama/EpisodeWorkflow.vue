@@ -657,7 +657,7 @@
                       v-model="shot.video_prompt"
                       type="textarea"
                       :rows="3"
-                      :maxlength="500"
+                      :maxlength="600"
                       show-word-limit
                       :placeholder="$t('workflow.videoPromptPlaceholder')"
                       class="shot-system-prompt-input"
