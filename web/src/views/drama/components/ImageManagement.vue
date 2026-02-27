@@ -40,7 +40,7 @@
 
       <el-table
         v-loading="loading"
-        :data="paginatedImages"
+        :data="filteredImages"
         @selection-change="handleSelectionChange"
         stripe
         style="width: 100%"
@@ -170,12 +170,6 @@ const filteredImages = computed(() => {
   );
 });
 
-const paginatedImages = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value;
-  const end = start + pageSize.value;
-  return filteredImages.value.slice(start, end);
-});
-
 // 方法
 const refreshImages = async () => {
   loading.value = true;
@@ -268,12 +262,6 @@ const deleteImage = async (row: any) => {
       images.value.splice(index, 1);
     }
 
-    // 如果当前页没有数据了，回退到上一页
-    const totalPages = Math.ceil(filteredImages.value.length / pageSize.value);
-    if (currentPage.value > totalPages && totalPages > 0) {
-      currentPage.value = totalPages;
-    }
-
     ElMessage.success($t('drama.management.imageDeleted'));
   } catch (error) {
     // 用户取消删除
@@ -301,8 +289,6 @@ const deleteSelectedImages = async () => {
       }
     );
 
-    const deleteCount = selectedImages.value.length;
-
     for (const image of selectedImages.value) {
       await deleteImageFile(image.filename);
     }
@@ -315,14 +301,7 @@ const deleteSelectedImages = async () => {
     });
 
     selectedImages.value = [];
-
-    // 如果当前页没有数据了，回退到上一页
-    const totalPages = Math.ceil(filteredImages.value.length / pageSize.value);
-    if (currentPage.value > totalPages && totalPages > 0) {
-      currentPage.value = totalPages;
-    }
-
-    ElMessage.success($t('drama.management.imagesDeleted', { count: deleteCount }));
+    ElMessage.success($t('drama.management.imagesDeleted', { count: selectedImages.value.length }));
   } catch (error) {
     // 用户取消删除
     if (error !== 'cancel') {

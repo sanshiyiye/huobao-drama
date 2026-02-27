@@ -827,6 +827,8 @@ export default {
     audio: 'Audio',
     extractAudio: 'Extract audio from all video clips',
     model: 'Model',
+    loadingMedia: 'Loading',
+    deleted: 'Deleted',
     videoGeneration: 'Video Generation',
     soundAndMusicTab: 'Sound & Music',
     videoMerge: 'Video Merge',

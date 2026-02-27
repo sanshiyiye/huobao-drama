@@ -1198,3 +1198,41 @@ func getString(s *string) string {
 	}
 	return *s
 }
+
+// ReorderStoryboards 按给定 id 顺序重排本集分镜的 storyboard_number（1 起始）
+func (s *StoryboardService) ReorderStoryboards(episodeID string, storyboardIDs []uint) error {
+	episodeIDUint, err := strconv.ParseUint(episodeID, 10, 32)
+	if err != nil {
+		return fmt.Errorf("invalid episode_id: %w", err)
+	}
+	episodeIDInt := uint(episodeIDUint)
+
+	var count int64
+	if err := s.db.Model(&models.Storyboard{}).Where("episode_id = ?", episodeIDInt).Count(&count).Error; err != nil {
+		return fmt.Errorf("count storyboards: %w", err)
+	}
+	if int(count) != len(storyboardIDs) {
+		return fmt.Errorf("storyboard_ids count (%d) does not match episode storyboard count (%d)", len(storyboardIDs), count)
+	}
+
+	idSet := make(map[uint]struct{}, len(storyboardIDs))
+	for _, id := range storyboardIDs {
+		idSet[id] = struct{}{}
+	}
+	var existing int64
+	if err := s.db.Model(&models.Storyboard{}).Where("episode_id = ? AND id IN ?", episodeIDInt, storyboardIDs).Count(&existing).Error; err != nil {
+		return fmt.Errorf("validate storyboard ids: %w", err)
+	}
+	if int(existing) != len(storyboardIDs) {
+		return fmt.Errorf("some storyboard_ids do not belong to this episode or are duplicate")
+	}
+
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		for i, id := range storyboardIDs {
+			if err := tx.Model(&models.Storyboard{}).Where("id = ? AND episode_id = ?", id, episodeIDInt).Update("storyboard_number", i+1).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}

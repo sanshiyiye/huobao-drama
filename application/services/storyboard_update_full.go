@@ -81,6 +81,20 @@ func (s *StoryboardService) UpdateStoryboard(storyboardID string, updates map[st
 		sceneID := uint(val)
 		updateData["scene_id"] = sceneID
 	}
+	// 支持清空视频链接（已删除的本地文件可在此彻底清除记录）
+	if v, ok := updates["video_url"]; ok {
+		if v == nil {
+			updateData["video_url"] = nil
+		} else if s, ok := v.(string); ok && s == "" {
+			updateData["video_url"] = nil
+		} else if s, ok := v.(string); ok && s != "" {
+			updateData["video_url"] = s
+		}
+	}
+	// 支持编辑并保存视频提示词（用于 AI 生成视频）
+	if val, ok := updates["video_prompt"].(string); ok {
+		updateData["video_prompt"] = val
+	}
 
 	// 使用当前数据库值填充缺失字段（用于生成提示词）
 	if sb.Title == "" && storyboard.Title != nil {

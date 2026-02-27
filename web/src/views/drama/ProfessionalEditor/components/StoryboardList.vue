@@ -12,13 +12,23 @@
       </div>
     </div>
 
-    <div class="storyboard-list">
+    <div
+      class="storyboard-list"
+      @dragover.prevent
+      @drop.prevent="onListDrop"
+    >
       <div
-        v-for="shot in storyboards"
+        v-for="(shot, index) in orderedList"
         :key="shot.id"
         class="storyboard-item"
-        :class="{ active: String(currentStoryboardId) === String(shot.id) }"
-        @click="selectStoryboard(shot.id)"
+        :class="{ active: String(currentStoryboardId) === String(shot.id), 'drag-over': dragOverIndex === index }"
+        draggable="true"
+        @click="!isDragging && selectStoryboard(shot.id)"
+        @dragstart="onDragStart($event, index)"
+        @dragend="onDragEnd"
+        @dragover.prevent="dragOverIndex = index"
+        @dragleave="dragOverIndex = -1"
+        @drop.prevent="onDrop($event, index)"
       >
         <div class="shot-content">
           <div class="shot-header">
@@ -30,13 +40,24 @@
           <div class="shot-desc" v-if="shot.action || shot.description">
             {{ shot.action || shot.description }}
           </div>
-          <el-button
-            link
-            type="danger"
-            :icon="Delete"
-            @click.stop="handleDeleteStoryboard(shot)"
-            class="delete-btn"
-          />
+          <div class="shot-content-actions">
+            <el-button
+              link
+              type="primary"
+              :icon="Edit"
+              class="edit-btn"
+              @click.stop="handleEditStoryboard(shot)"
+            >
+              {{ $t("workflow.editShot") }}
+            </el-button>
+            <el-button
+              link
+              type="danger"
+              :icon="Delete"
+              @click.stop="handleDeleteStoryboard(shot)"
+              class="delete-btn"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -44,6 +65,7 @@
 </template>
 
 <script setup lang="ts">
+import { ref, watch } from "vue";
 import { Plus, Delete, InfoFilled } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
 import type { Storyboard } from "@/types/drama";
@@ -61,9 +83,24 @@ const emit = defineEmits<{
   select: [id: number];
   add: [];
   delete: [storyboard: Storyboard];
+  reorder: [storyboardIds: number[]];
+  edit: [storyboard: Storyboard];
 }>();
 
 const { t: $t } = useI18n();
+
+const orderedList = ref<Storyboard[]>([]);
+watch(
+  () => props.storyboards,
+  (v) => {
+    orderedList.value = v && v.length ? [...v] : [];
+  },
+  { immediate: true, deep: true }
+);
+
+const dragFromIndex = ref(-1);
+const dragOverIndex = ref(-1);
+const isDragging = ref(false);
 
 const selectStoryboard = (id: number) => {
   emit("select", id);
@@ -73,8 +110,38 @@ const handleAddStoryboard = () => {
   emit("add");
 };
 
+const handleEditStoryboard = (storyboard: Storyboard) => {
+  emit("edit", storyboard);
+};
+
 const handleDeleteStoryboard = (storyboard: Storyboard) => {
   emit("delete", storyboard);
+};
+
+const onDragStart = (_e: DragEvent, index: number) => {
+  dragFromIndex.value = index;
+  isDragging.value = true;
+};
+
+const onDragEnd = () => {
+  isDragging.value = false;
+  dragFromIndex.value = -1;
+  dragOverIndex.value = -1;
+};
+
+const onDrop = (_e: DragEvent, toIndex: number) => {
+  const from = dragFromIndex.value;
+  if (from < 0 || from === toIndex) return;
+  const list = orderedList.value;
+  const [item] = list.splice(from, 1);
+  list.splice(toIndex, 0, item);
+  emit("reorder", list.map((s) => s.id));
+  dragOverIndex.value = -1;
+};
+
+const onListDrop = (e: DragEvent) => {
+  e.preventDefault();
+  dragOverIndex.value = -1;
 };
 </script>
 
@@ -159,7 +226,7 @@ const handleDeleteStoryboard = (storyboard: Storyboard) => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-right: 24px;
+  padding-right: 80px;
 }
 
 .shot-header {
@@ -199,16 +266,33 @@ const handleDeleteStoryboard = (storyboard: Storyboard) => {
   color: var(--text-secondary);
 }
 
-.delete-btn {
+.storyboard-item.drag-over {
+  border-color: var(--el-color-primary);
+  background: var(--bg-card-hover);
+}
+
+.shot-content-actions {
   position: absolute;
   top: 10px;
   right: 10px;
-  padding: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   opacity: 0;
   transition: opacity 0.2s;
 }
 
-.delete-btn:hover {
+.storyboard-item:hover .shot-content-actions {
+  opacity: 1;
+}
+
+.shot-content-actions .edit-btn,
+.shot-content-actions .delete-btn {
+  padding: 4px;
+}
+
+.shot-content-actions .edit-btn:hover,
+.shot-content-actions .delete-btn:hover {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 4px;
 }

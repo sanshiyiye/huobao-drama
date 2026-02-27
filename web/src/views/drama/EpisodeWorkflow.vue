@@ -261,6 +261,8 @@
                       $t("workflow.characterCount", { count: charactersCount })
                     }}
                   </el-alert>
+                  <div class="current-model-tip">当前模型：{{ currentImageModelLabel }}</div>
+                  <div v-if="currentImageModelProviderLabel" class="current-model-tip">厂商：{{ currentImageModelProviderLabel }}</div>
                 </div>
                 <div class="section-actions">
                   <el-checkbox
@@ -313,7 +315,11 @@
                     </div>
 
                     <div class="card-image-container">
-                      <div v-if="hasImage(char)" class="char-image">
+                      <div
+                        v-if="hasImage(char)"
+                        class="char-image char-image-clickable"
+                        @click="openCharacterImagePreview(char)"
+                      >
                         <el-image :src="getImageUrl(char)" fit="cover" />
                       </div>
                       <div
@@ -440,6 +446,8 @@
                       })
                     }}
                   </el-alert>
+                  <div class="current-model-tip">当前模型：{{ currentImageModelLabel }}</div>
+                  <div v-if="currentImageModelProviderLabel" class="current-model-tip">厂商：{{ currentImageModelProviderLabel }}</div>
                 </div>
                 <div class="section-actions">
                   <!-- <el-button
@@ -651,18 +659,11 @@
                       <span class="shot-title-text">{{ $t("workflow.shotNumberTitle", { n: index + 1, title: shot.title || $t("workflow.untitledShot") }) }}</span>
                     </div>
                     <div class="shot-card-prompt-row">
-                      <span class="shot-char-count">{{ (shot.video_prompt || '').length }}/500</span>
+                      <span class="shot-char-count">{{ (shot.video_prompt || '').length }}/600</span>
                     </div>
-                    <el-input
-                      v-model="shot.video_prompt"
-                      type="textarea"
-                      :rows="3"
-                      :maxlength="600"
-                      show-word-limit
-                      :placeholder="$t('workflow.videoPromptPlaceholder')"
-                      class="shot-system-prompt-input"
-                      @blur="saveShotSystemPrompt(shot)"
-                    />
+                    <div class="shot-prompt-readonly" :class="{ 'is-placeholder': !shot.video_prompt }">
+                      {{ shot.video_prompt || $t('workflow.videoPromptPlaceholder') }}
+                    </div>
                     <div class="shot-meta">
                       <div class="shot-meta-row">
                         <span class="shot-label">{{ $t("workflow.associatedCharacters") }}:</span>
@@ -707,6 +708,14 @@
                     </div>
                   </div>
                   <div class="shot-card-actions">
+                    <el-button
+                      type="primary"
+                      link
+                      :icon="Edit"
+                      @click="editShot(shot, index)"
+                    >
+                      {{ $t("workflow.editShot") }}
+                    </el-button>
                     <el-button
                       type="danger"
                       link
@@ -1200,6 +1209,23 @@
         </template>
       </el-dialog>
 
+      <!-- 角色图片大图预览 -->
+      <el-dialog
+        v-model="showCharacterImagePreviewDialog"
+        :title="characterImagePreviewTarget?.name"
+        width="600px"
+        class="workflow-character-image-preview-dialog"
+      >
+        <div v-if="characterImagePreviewTarget" class="workflow-character-image-preview">
+          <img
+            v-if="hasImage(characterImagePreviewTarget)"
+            :src="getImageUrl(characterImagePreviewTarget)"
+            :alt="characterImagePreviewTarget.name"
+          />
+          <el-empty v-else :description="$t('common.notGenerated')" />
+        </div>
+      </el-dialog>
+
       <!-- 角色库选择对话框 -->
       <el-dialog
         v-model="libraryDialogVisible"
@@ -1647,6 +1673,9 @@ const currentUploadTarget = ref<any>(null);
 // 角色设计弹框
 const characterDesignDialogVisible = ref(false);
 const characterDesignTarget = ref<any>(null);
+/** 角色图片大图预览 */
+const showCharacterImagePreviewDialog = ref(false);
+const characterImagePreviewTarget = ref<any>(null);
 const characterDesignSaving = ref(false);
 const characterDesignForm = ref({
   name: "",
@@ -1692,12 +1721,17 @@ interface ModelOption {
   configName: string;
   configId: number;
   priority: number;
+  provider?: string;
 }
 
 const textModels = ref<ModelOption[]>([]);
 const imageModels = ref<ModelOption[]>([]);
 const selectedTextModel = ref<string>("");
 const selectedImageModel = ref<string>("");
+/** 后端当前默认图片模型（图文配置默认），用于展示 */
+const defaultImageModelName = ref<string>("");
+/** 后端当前默认图片厂商，用于展示 */
+const defaultImageModelProvider = ref<string>("");
 
 const hasScript = computed(() => {
   const currentEp = currentEpisode.value;
@@ -1743,6 +1777,23 @@ const hasExtractedData = computed(() => {
     currentEpisode.value?.scenes && currentEpisode.value.scenes.length > 0;
   // 只要有角色或场景，就认为已经提取过数据
   return hasCharacters.value || hasScenes;
+});
+
+/** 当前用于展示的图片模型名称：本页选择优先，否则显示后端默认 */
+const currentImageModelLabel = computed(
+  () =>
+    selectedImageModel.value || defaultImageModelName.value || "未配置",
+);
+
+/** 当前用于展示的图片厂商：本页选择对应配置的 provider，否则显示后端默认的 provider */
+const currentImageModelProviderLabel = computed(() => {
+  if (selectedImageModel.value) {
+    const opt = imageModels.value.find(
+      (m) => m.modelName === selectedImageModel.value,
+    );
+    return opt?.provider ?? "";
+  }
+  return defaultImageModelProvider.value ?? "";
 });
 
 const allImagesGenerated = computed(() => {
@@ -1857,6 +1908,7 @@ const loadAIConfigs = async () => {
           configName: config.name,
           configId: config.id,
           priority: config.priority || 0,
+          provider: config.provider,
         }));
       })
       .sort((a, b) => b.priority - a.priority);
@@ -1930,6 +1982,16 @@ const loadAIConfigs = async () => {
           selectedImageModel.value,
         );
       }
+    }
+
+    // 拉取后端当前默认图片模型与厂商（与生图实际使用逻辑一致），用于界面展示
+    try {
+      const defaultConfig = await aiAPI.getDefault("image");
+      defaultImageModelName.value = defaultConfig?.model ?? "";
+      defaultImageModelProvider.value = defaultConfig?.provider ?? "";
+    } catch {
+      defaultImageModelName.value = "";
+      defaultImageModelProvider.value = "";
     }
   } catch (error: any) {
     console.error("加载AI配置失败:", error);
@@ -2638,22 +2700,6 @@ const getShotCharacterNames = (shot: any): string[] => {
     .map((c: any) => c.name || "");
 };
 
-// 卡片内系统提示词失焦保存
-const saveShotSystemPrompt = async (shot: any) => {
-  if (!shot?.id) return;
-  try {
-    await dramaAPI.updateStoryboard(shot.id.toString(), {
-      video_prompt: shot.video_prompt ?? "",
-    });
-    ElMessage.success("系统提示词已保存");
-    if (currentStep.value === "3" && professionalEditorRef.value?.loadData) {
-      await professionalEditorRef.value.loadData();
-    }
-  } catch (e: any) {
-    ElMessage.error(e?.message || "保存失败");
-  }
-};
-
 // 删除分镜
 const deleteShot = async (shot: any, index: number) => {
   try {
@@ -2748,6 +2794,11 @@ const saveShotEdit = async () => {
 };
 
 // 对话框相关方法
+/** 点击角色图片弹出大图预览 */
+const openCharacterImagePreview = (char: any) => {
+  characterImagePreviewTarget.value = char;
+  showCharacterImagePreviewDialog.value = true;
+};
 const openCharacterDesignDialog = (char: any) => {
   console.log("Opening character design dialog for char:", char);
   characterDesignTarget.value = char;
@@ -3580,6 +3631,24 @@ onMounted(() => {
     color: var(--text-muted);
   }
 
+  .shot-prompt-readonly {
+    min-height: 64px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+
+    &.is-placeholder {
+      color: var(--text-muted);
+    }
+  }
+
   .shot-system-prompt-input {
     margin-bottom: 12px;
   }
@@ -3812,6 +3881,11 @@ onMounted(() => {
       .el-alert {
         border-radius: 4px;
       }
+
+      .current-model-tip {
+        font-size: 12px;
+        color: var(--text-secondary, #666);
+      }
     }
 
     .section-actions {
@@ -3919,6 +3993,10 @@ onMounted(() => {
         height: 100%;
         border-radius: 0;
       }
+    }
+
+    .char-image-clickable {
+      cursor: pointer;
     }
 
     .char-placeholder,
@@ -4249,6 +4327,21 @@ onMounted(() => {
     color: var(--text-secondary);
     font-size: 14px;
     margin-bottom: 16px;
+  }
+}
+
+/* 角色图片大图预览弹窗内容 */
+.workflow-character-image-preview {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 300px;
+
+  img {
+    max-width: 100%;
+    max-height: 70vh;
+    border-radius: 8px;
+    object-fit: contain;
   }
 }
 </style>

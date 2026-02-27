@@ -767,6 +767,8 @@ export default {
     audio: '音频',
     extractAudio: '从所有视频片段提取音频',
     model: '模型',
+    loadingMedia: '正在加载',
+    deleted: '已删除',
     videoGeneration: '视频生成',
     soundAndMusicTab: '音效与配乐',
     videoMerge: '视频合成',

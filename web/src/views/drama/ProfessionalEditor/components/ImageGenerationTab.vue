@@ -1,5 +1,15 @@
 <template>
   <div class="image-generation-tab">
+    <!-- 当前使用模型（单独一块，在场景上方） -->
+    <div v-if="props.currentImageModel" class="current-model-section">
+      <span class="section-label">{{ $t('video.model') }}</span>
+      <span class="current-model-value">{{ props.currentImageModel }}</span>
+      <template v-if="props.currentImageProvider">
+        <span class="section-label provider-label">厂商</span>
+        <span class="current-model-value">{{ props.currentImageProvider }}</span>
+      </template>
+    </div>
+
     <!-- 镜头上下文信息 -->
     <ShotContextTab
       :current-storyboard="currentStoryboard"
@@ -67,23 +77,25 @@
 
     <!-- 图片生成控制：等大、并排、配色均衡 -->
     <div class="generate-controls">
-      <el-button
-        class="gen-btn gen-btn-primary"
-        :loading="generatingImage"
-        @click="handleGenerateImage"
-        :disabled="!currentStoryboard || !internalCurrentFramePrompt"
-      >
-        <el-icon class="gen-btn-icon"><Picture /></el-icon>
-        <span class="gen-btn-text">{{ generatingImage ? $t('editor.generating') : $t('editor.generateImage') }}</span>
-      </el-button>
-      <el-button
-        class="gen-btn gen-btn-secondary"
-        @click="handleUploadImage"
-        :disabled="!currentStoryboard"
-      >
-        <el-icon class="gen-btn-icon"><Upload /></el-icon>
-        <span class="gen-btn-text">{{ $t('editor.uploadImage') }}</span>
-      </el-button>
+      <div class="generate-controls-buttons">
+        <el-button
+          class="gen-btn gen-btn-primary"
+          :loading="generatingImage"
+          @click="handleGenerateImage"
+          :disabled="!currentStoryboard || !internalCurrentFramePrompt"
+        >
+          <el-icon class="gen-btn-icon"><Picture /></el-icon>
+          <span class="gen-btn-text">{{ generatingImage ? $t('editor.generating') : $t('editor.generateImage') }}</span>
+        </el-button>
+        <el-button
+          class="gen-btn gen-btn-secondary"
+          @click="handleUploadImage"
+          :disabled="!currentStoryboard"
+        >
+          <el-icon class="gen-btn-icon"><Upload /></el-icon>
+          <span class="gen-btn-text">{{ $t('editor.uploadImage') }}</span>
+        </el-button>
+      </div>
     </div>
 
     <!-- 图片列表 -->
@@ -162,6 +174,10 @@ import { getImageUrl, hasImage } from '@/utils/image'
 
 interface ImageGenerationTabProps {
   currentStoryboard?: any
+  /** 当前使用的图片模型名称（来自后端默认配置，用于展示） */
+  currentImageModel?: string
+  /** 当前使用的图片厂商（来自后端默认配置，用于展示） */
+  currentImageProvider?: string
   generatedImages?: any[]
   loadingImages?: boolean
   isGeneratingPrompt?: boolean
@@ -352,6 +368,31 @@ const getStatusText = (status: string) => {
   gap: 20px;
 }
 
+/* 当前使用模型（在场景上方单独一块） */
+.current-model-section {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-card, #f5f7fa);
+  border: 1px solid var(--border-primary, #e4e7ed);
+  border-radius: 8px;
+  margin-bottom: 4px;
+}
+.current-model-section .section-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.current-model-section .section-label.provider-label {
+  margin-left: 12px;
+}
+.current-model-section .current-model-value {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
 /* 镜头类型 + 提示词编辑 统一区块 */
 .prompt-block-section {
   margin-bottom: 4px;
@@ -480,8 +521,13 @@ const getStatusText = (status: string) => {
 
 .generate-controls {
   display: flex;
-  gap: 12px;
+  flex-direction: column;
+  gap: 8px;
   margin-bottom: 20px;
+}
+.generate-controls-buttons {
+  display: flex;
+  gap: 12px;
 }
 
 .gen-btn {

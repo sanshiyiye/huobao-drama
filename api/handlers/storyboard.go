@@ -110,3 +110,21 @@ func (h *StoryboardHandler) DeleteStoryboard(c *gin.Context) {
 
 	response.Success(c, nil)
 }
+
+// ReorderStoryboards 按给定顺序重排本集分镜（请求体: { "storyboard_ids": [id1, id2, ...] }）
+func (h *StoryboardHandler) ReorderStoryboards(c *gin.Context) {
+	episodeID := c.Param("episode_id")
+	var req struct {
+		StoryboardIDs []uint `json:"storyboard_ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request body: storyboard_ids required")
+		return
+	}
+	if err := h.storyboardService.ReorderStoryboards(episodeID, req.StoryboardIDs); err != nil {
+		h.log.Errorw("Failed to reorder storyboards", "error", err, "episode_id", episodeID)
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"message": "Storyboards reordered"})
+}

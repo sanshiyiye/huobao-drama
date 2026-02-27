@@ -85,6 +85,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 		aiConfigs := api.Group("/ai-configs")
 		{
 			aiConfigs.GET("", aiConfigHandler.ListConfigs)
+			aiConfigs.GET("/default", aiConfigHandler.GetDefaultConfig)
 			aiConfigs.POST("", aiConfigHandler.CreateConfig)
 			aiConfigs.POST("/test", aiConfigHandler.TestConnection)
 			aiConfigs.GET("/:id", aiConfigHandler.GetConfig)
@@ -142,6 +143,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 			episodes.POST("/:episode_id/characters/extract", characterLibraryHandler.ExtractCharacters)
 			episodes.POST("/:episode_id/style/extract", characterLibraryHandler.ExtractStyle)
 			episodes.GET("/:episode_id/storyboards", sceneHandler.GetStoryboardsForEpisode)
+			episodes.PUT("/:episode_id/storyboards/order", storyboardHandler.ReorderStoryboards)
 			episodes.GET("/:episode_id/batch-image-progress", batchHandler.GetBatchImageProgress)
 			episodes.POST("/:episode_id/finalize", dramaHandler.FinalizeEpisode)
 			episodes.GET("/:episode_id/download", dramaHandler.DownloadEpisodeVideo)

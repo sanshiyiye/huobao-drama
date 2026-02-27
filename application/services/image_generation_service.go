@@ -237,8 +237,22 @@ func (s *ImageGenerationService) ProcessImageGeneration(imageGenID uint) {
 	if imageGen.NegPrompt != nil && *imageGen.NegPrompt != "" {
 		opts = append(opts, image.WithNegativePrompt(*imageGen.NegPrompt))
 	}
-	if imageGen.Size != "" {
-		opts = append(opts, image.WithSize(imageGen.Size))
+	sizeForAPI := imageGen.Size
+	if sizeForAPI == "" {
+		// 根据项目宽高比映射为火山引擎等厂商需要的分辨率（正确尺寸、无水印由 WithSize + 客户端 Watermark:false 保证）
+		switch imageRatio {
+		case "16:9":
+			sizeForAPI = "2560x1440"
+		case "9:16":
+			sizeForAPI = "1440x2560"
+		case "1:1":
+			sizeForAPI = "1920x1920"
+		default:
+			sizeForAPI = "2560x1440"
+		}
+	}
+	if sizeForAPI != "" {
+		opts = append(opts, image.WithSize(sizeForAPI))
 	}
 	if imageGen.Quality != "" {
 		opts = append(opts, image.WithQuality(imageGen.Quality))

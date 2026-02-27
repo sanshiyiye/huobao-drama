@@ -30,6 +30,8 @@
         @select="selectStoryboard"
         @add="handleAddStoryboard"
         @delete="handleDeleteStoryboard"
+        @reorder="handleReorderStoryboards"
+        @edit="openShotEditDialog"
       />
 
       <!-- 中间编辑区域（媒体预览 / 视频编辑 / 批量编辑） -->
@@ -97,7 +99,7 @@
                 :drama-id="dramaId.toString()"
                 :assets="videoAssets"
                 @select-scene="handleTimelineSelect"
-                @asset-deleted="loadVideoAssets"
+                @asset-deleted="handleAssetDeleted"
                 @merge-completed="handleMergeCompleted"
               />
               <el-empty
@@ -327,6 +329,8 @@
             <div class="tab-content" v-if="currentStoryboard">
               <ImageGenerationTab
                 :current-storyboard="currentStoryboard"
+                :current-image-model="defaultImageModelName"
+                :current-image-provider="defaultImageModelProvider"
                 :generated-images="generatedImages"
                 :loading-images="loadingImages"
                 :is-generating-prompt="isGeneratingPrompt(currentStoryboard?.id, selectedFrameType)"
@@ -1548,6 +1552,53 @@
       </div>
     </el-dialog>
 
+    <!-- 编辑镜头对话框（与 EpisodeWorkflow 编辑镜头一致，无需切换页面） -->
+    <el-dialog
+      v-model="shotEditDialogVisible"
+      :title="$t('workflow.editShot')"
+      width="720px"
+      :close-on-click-modal="false"
+    >
+      <el-form v-if="editingStoryboard" label-width="100px" size="default">
+        <el-form-item :label="$t('workflow.shotTitle')">
+          <el-input v-model="editingStoryboard.title" :placeholder="$t('workflow.shotTitlePlaceholder')" />
+        </el-form-item>
+        <el-form-item :label="$t('workflow.actionDescription')">
+          <el-input v-model="editingStoryboard.action" type="textarea" :rows="3" :placeholder="$t('workflow.detailedAction')" />
+        </el-form-item>
+        <el-form-item :label="$t('workflow.shotDescription')">
+          <el-input v-model="editingStoryboard.description" type="textarea" :rows="2" :placeholder="$t('workflow.shotDescriptionPlaceholder')" />
+        </el-form-item>
+        <el-form-item :label="$t('workflow.videoPrompt')">
+          <el-input v-model="editingStoryboard.video_prompt" type="textarea" :rows="3" :placeholder="$t('workflow.videoPromptPlaceholder')" />
+        </el-form-item>
+        <el-form-item :label="$t('workflow.associatedCharacters')">
+          <el-select
+            v-model="editingStoryboard.characters"
+            multiple
+            filterable
+            :placeholder="$t('workflow.selectCharacters')"
+            collapse-tags
+            style="width: 100%"
+          >
+            <el-option v-for="c in characters" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="$t('workflow.associatedScenes')">
+          <el-select v-model="editingStoryboard.scene_id" clearable :placeholder="$t('workflow.selectScene')" style="width: 100%">
+            <el-option v-for="s in availableScenes" :key="s.id" :label="s.location || s.title || s.id" :value="Number(s.id)" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="$t('workflow.durationSeconds')">
+          <el-input-number v-model="editingStoryboard.duration" :min="1" :max="60" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="shotEditDialogVisible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="savingShotEdit" @click="saveShotEditInEditor">{{ $t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 角色选择对话框 -->
     <el-dialog
       v-model="showCharacterSelector"
@@ -1873,6 +1924,11 @@ const editPanelVisible = ref(true);
 /** 媒体预览 Tab 下按分镜分组的图片（切换至媒体预览时加载） */
 const mediaPreviewImagesByShot = ref<Record<string, ImageGeneration[]>>({});
 const showSceneSelector = ref(false);
+
+// 编辑镜头对话框（左侧分镜列表点击编辑）
+const shotEditDialogVisible = ref(false);
+const editingStoryboard = ref<any>(null);
+const savingShotEdit = ref(false);
 const showCharacterSelector = ref(false);
 const showCharacterImagePreview = ref(false);
 const previewCharacter = ref<any>(null);
@@ -1936,6 +1992,10 @@ const timelineEditorRef = ref<InstanceType<typeof VideoTimelineEditor> | null>(
 );
 const videoReferenceImages = ref<ImageGeneration[]>([]);
 const selectedVideoModel = ref<string>("");
+/** 当前默认图片模型（后端图文配置），用于图片 tab 展示 */
+const defaultImageModelName = ref<string>("");
+/** 当前默认图片厂商，用于图片 tab 展示 */
+const defaultImageModelProvider = ref<string>("");
 const selectedReferenceMode = ref<string>(""); // 参考图模式：single, first_last, multiple, none
 // 批量出片每镜头选择的视频模型，key 为 shot.id
 const batchShotVideoModel = ref<Record<string, string>>({});
@@ -2228,6 +2288,18 @@ const loadVideoModels = async () => {
   }
 };
 
+// 加载当前默认图片模型与厂商（与后端生图逻辑一致，用于图片 tab 展示）
+const loadDefaultImageModel = async () => {
+  try {
+    const config = await aiAPI.getDefault("image");
+    defaultImageModelName.value = config?.model ?? "";
+    defaultImageModelProvider.value = config?.provider ?? "";
+  } catch {
+    defaultImageModelName.value = "";
+    defaultImageModelProvider.value = "";
+  }
+};
+
 // 加载视频素材库
 const loadVideoAssets = async () => {
   try {
@@ -2243,6 +2315,11 @@ const loadVideoAssets = async () => {
   } catch (error: any) {
     console.error("加载视频素材库失败:", error);
   }
+};
+
+// 素材库删除或分镜视频清除后刷新列表（需重拉分镜以反映 video_url 清空）
+const handleAssetDeleted = () => {
+  loadData();
 };
 
 // 当前模型能力
@@ -3617,6 +3694,20 @@ const stopPolling = () => {
   pollingFrameType = null;
 };
 
+// 根据项目宽高比返回火山引擎等厂商需要的 size（正确尺寸、后端配合无水印）
+function getSizeFromAspectRatio(aspectRatio?: string): string {
+  switch (aspectRatio) {
+    case "16:9":
+      return "2560x1440";
+    case "9:16":
+      return "1440x2560";
+    case "1:1":
+      return "1920x1920";
+    default:
+      return "2560x1440";
+  }
+}
+
 // 生成图片
 const generateFrameImage = async () => {
   if (!currentStoryboard.value || !currentFramePrompt.value) return;
@@ -3641,12 +3732,15 @@ const generateFrameImage = async () => {
       });
     }
 
+    const size = getSizeFromAspectRatio(drama.value?.aspect_ratio);
+
     const result = await imageAPI.generateImage({
       drama_id: dramaId.value.toString(),
       prompt: currentFramePrompt.value,
       storyboard_id: currentStoryboard.value.id,
       image_type: "storyboard",
       frame_type: selectedFrameType.value,
+      size,
       reference_images:
         referenceImages.length > 0 ? referenceImages : undefined,
     });
@@ -4387,6 +4481,49 @@ const selectStoryboard = (id: string) => {
   currentStoryboardId.value = id;
 };
 
+const openShotEditDialog = (shot: any) => {
+  editingStoryboard.value = {
+    id: shot.id,
+    title: shot.title ?? "",
+    action: shot.action ?? "",
+    description: shot.description ?? "",
+    video_prompt: shot.video_prompt ?? "",
+    duration: shot.duration ?? 5,
+    scene_id: shot.scene_id ?? null,
+    characters: Array.isArray(shot.characters)
+      ? shot.characters.map((c: any) => (typeof c === "object" && c?.id != null ? c.id : c))
+      : [],
+  };
+  shotEditDialogVisible.value = true;
+};
+
+const saveShotEditInEditor = async () => {
+  if (!editingStoryboard.value) return;
+  savingShotEdit.value = true;
+  try {
+    const charIds = Array.isArray(editingStoryboard.value.characters)
+      ? editingStoryboard.value.characters.map((c: any) => (typeof c === "object" && c?.id != null ? c.id : c))
+      : [];
+    await dramaAPI.updateStoryboard(String(editingStoryboard.value.id), {
+      title: editingStoryboard.value.title,
+      action: editingStoryboard.value.action,
+      description: editingStoryboard.value.description,
+      video_prompt: editingStoryboard.value.video_prompt,
+      duration: editingStoryboard.value.duration,
+      scene_id: editingStoryboard.value.scene_id ?? undefined,
+      characters: charIds,
+    });
+    ElMessage.success("保存成功");
+    shotEditDialogVisible.value = false;
+    editingStoryboard.value = null;
+    await loadData();
+  } catch (error: any) {
+    ElMessage.error("保存失败: " + (error?.message ?? "未知错误"));
+  } finally {
+    savingShotEdit.value = false;
+  }
+};
+
 const handleTimelineSelect = (sceneId: number) => {
   selectStoryboard(String(sceneId));
 };
@@ -4604,12 +4741,16 @@ const handleAddStoryboard = async () => {
   if (!episodeId.value) return;
 
   try {
-    const nextShotNumber =
-      storyboards.value.length > 0
-        ? Math.max(...storyboards.value.map((s) => s.storyboard_number)) + 1
-        : 1;
+    const list = storyboards.value;
+    const insertAfterIndex =
+      currentStoryboardId.value != null
+        ? list.findIndex((s) => String(s.id) === String(currentStoryboardId.value))
+        : -1;
 
-    await dramaAPI.createStoryboard({
+    const nextShotNumber =
+      list.length > 0 ? Math.max(...list.map((s) => s.storyboard_number)) + 1 : 1;
+
+    const created = await dramaAPI.createStoryboard({
       episode_id: parseInt(episodeId.value),
       storyboard_number: nextShotNumber,
       title: `镜头 ${nextShotNumber}`,
@@ -4618,21 +4759,42 @@ const handleAddStoryboard = async () => {
       dialogue: "",
       duration: 5,
       scene_id:
-        storyboards.value.length > 0
-          ? storyboards.value[storyboards.value.length - 1].scene_id
-          : undefined,
+        list.length > 0 ? list[list.length - 1].scene_id : undefined,
     });
 
     ElMessage.success("添加分镜成功");
-    await loadData(); // Refresh list
+    await loadData();
 
-    // Select the new storyboard (the last one)
+    if (insertAfterIndex >= 0 && storyboards.value.length > 1) {
+      const arr = storyboards.value;
+      const newId = created.id;
+      const newOrderedIds = [
+        ...arr.slice(0, insertAfterIndex + 1).map((s) => s.id),
+        newId,
+        ...arr.slice(insertAfterIndex + 1, arr.length - 1).map((s) => s.id),
+      ];
+      await dramaAPI.reorderStoryboards(episodeId.value, newOrderedIds);
+      await loadData();
+    }
+
     if (storyboards.value.length > 0) {
-      selectStoryboard(storyboards.value[storyboards.value.length - 1].id);
+      selectStoryboard(String(created.id));
     }
   } catch (error: any) {
     console.error("添加分镜失败:", error);
     ElMessage.error(error.message || "添加分镜失败");
+  }
+};
+
+const handleReorderStoryboards = async (storyboardIds: number[]) => {
+  if (!episodeId.value || storyboardIds.length === 0) return;
+  try {
+    await dramaAPI.reorderStoryboards(episodeId.value, storyboardIds);
+    ElMessage.success("顺序已更新");
+    await loadData();
+  } catch (error: any) {
+    console.error("重排分镜失败:", error);
+    ElMessage.error(error.message || "重排失败");
   }
 };
 
@@ -4851,6 +5013,7 @@ const formatDateTime = (dateStr: string) => {
 onMounted(async () => {
   await loadData();
   await loadVideoModels();
+  await loadDefaultImageModel();
   await loadVideoMerges();
 });
 

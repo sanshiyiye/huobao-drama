@@ -96,7 +96,33 @@
             @dragstart="handleDragStart($event, scene)"
           >
             <div class="media-thumbnail" @click="previewScene(scene)">
-              <video :src="scene.video_url" />
+              <video
+                v-if="scene.video_url"
+                :src="scene.video_url"
+                @loadstart="onMediaLoadStart(scene)"
+                @loadeddata="onMediaLoaded(scene)"
+                @error="onMediaError(scene)"
+              />
+              <div v-else class="media-state-placeholder media-state-error">
+                <el-icon :size="32"><Delete /></el-icon>
+                <span>{{ $t('video.deleted') }}</span>
+              </div>
+              <div
+                v-if="mediaLoadState[scene.id] === 'loading'"
+                class="media-state-overlay media-state-loading"
+                @click.stop
+              >
+                <el-icon :size="32" class="media-state-spin"><Loading /></el-icon>
+                <span>{{ $t('video.loadingMedia') }}</span>
+              </div>
+              <div
+                v-else-if="mediaLoadState[scene.id] === 'error'"
+                class="media-state-overlay media-state-error"
+                @click.stop
+              >
+                <el-icon :size="32"><Delete /></el-icon>
+                <span>{{ $t('video.deleted') }}</span>
+              </div>
               <div class="media-duration">{{ scene.duration > 0 ? scene.duration.toFixed(1) : '?' }}s</div>
               <el-button
                 class="delete-btn"
@@ -376,7 +402,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   VideoPlay,
@@ -507,8 +533,9 @@ const availableStoryboards = computed(() => {
       }
     })
 
-  // 处理分镜场景
+  // 处理分镜场景（只显示有视频链接的分镜，清空后不再占位）
   const scenes = (props.scenes || [])
+    .filter((s) => s.video_url)
     .map((s) => {
       console.log('🎬 Processing scene:', s)
       return {
@@ -536,6 +563,23 @@ const availableStoryboards = computed(() => {
   return allStoryboards
 })
 const timelineClips = ref<TimelineClip[]>([])
+/** 媒体库每个视频的加载状态：loading | loaded | error（本地文件不存在等） */
+const mediaLoadState = ref<Record<string, 'loading' | 'loaded' | 'error'>>({})
+
+watch(availableStoryboards, (list) => {
+  const next: Record<string, 'loading' | 'loaded' | 'error'> = {}
+  list.forEach((s) => {
+    const id = s.id
+    if (!s.video_url) {
+      next[id] = 'error'
+    } else {
+      const prev = mediaLoadState.value[id]
+      next[id] = prev === 'loaded' ? 'loaded' : prev === 'error' ? 'error' : 'loading'
+    }
+  })
+  mediaLoadState.value = next
+}, { immediate: true })
+
 const audioClips = ref<AudioClip[]>([])
 const selectedClipId = ref<string | null>(null)
 const selectedAudioClipId = ref<string | null>(null)
@@ -1028,25 +1072,47 @@ const addAllScenesInOrder = async () => {
   ElMessage.success(`已批量添加 ${sortedScenes.length} 个场景到时间线`)
 }
 
+// 媒体库视频加载状态
+const onMediaLoadStart = (scene: any) => {
+  if (scene?.video_url) mediaLoadState.value[scene.id] = 'loading'
+}
+const onMediaLoaded = (scene: any) => {
+  if (scene?.id) mediaLoadState.value[scene.id] = 'loaded'
+}
+const onMediaError = (scene: any) => {
+  if (scene?.id) mediaLoadState.value[scene.id] = 'error'
+}
+
 // 删除素材
 const deleteAsset = async (scene: any) => {
-  if (!scene.isAsset) {
+  if (scene.isAsset) {
+    try {
+      const { assetAPI } = await import('@/api/asset')
+      await assetAPI.deleteAsset(scene.asset_id)
+      ElMessage.success('删除成功')
+      emit('asset-deleted')
+    } catch (error: any) {
+      console.error('删除素材失败:', error)
+      ElMessage.error(error.message || '删除失败')
+    }
+    return
+  }
+
+  // 分镜视频：仅当「已删除」或无 video_url 时允许彻底删除（清空链接，从列表移除）
+  const isDeleted = mediaLoadState.value[scene.id] === 'error' || !scene.video_url
+  if (!isDeleted) {
     ElMessage.warning('只能删除素材库中的视频')
     return
   }
 
   try {
-    // 直接调用API删除
-    const { assetAPI } = await import('@/api/asset')
-    await assetAPI.deleteAsset(scene.asset_id)
-
-    ElMessage.success('删除成功')
-
-    // 通知父组件刷新素材列表
+    const { dramaAPI } = await import('@/api/drama')
+    await dramaAPI.updateStoryboard(scene.storyboard_id, { video_url: null })
+    ElMessage.success('已清除该分镜的视频记录')
     emit('asset-deleted')
   } catch (error: any) {
-    console.error('删除素材失败:', error)
-    ElMessage.error(error.message || '删除失败')
+    console.error('清除分镜视频记录失败:', error)
+    ElMessage.error(error?.message || '清除失败')
   }
 }
 
@@ -1724,8 +1790,9 @@ const togglePlay = () => {
 
 // 键盘快捷键
 const handleKeyPress = (event: KeyboardEvent) => {
-  // 如果在输入框中，不处理快捷键
-  if ((event.target as HTMLElement).tagName === 'INPUT') return
+  // 在输入框、文本框、下拉框内不处理快捷键，避免打字/选字时触发播放等
+  const tag = (event.target as HTMLElement).tagName
+  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return
 
   switch (event.code) {
     case 'Space':
@@ -2421,7 +2488,7 @@ defineExpose({
             opacity: 1;
           }
 
-          .media-thumbnail {
+            .media-thumbnail {
             position: relative;
             width: 100%;
             aspect-ratio: 16/9;
@@ -2433,6 +2500,53 @@ defineExpose({
               height: 100%;
               object-fit: cover;
               pointer-events: none;
+            }
+
+            .media-state-placeholder {
+              position: absolute;
+              top: 0;
+              left: 0;
+              right: 0;
+              bottom: 0;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              gap: 8px;
+              color: var(--el-color-danger);
+              font-size: 12px;
+              z-index: 1;
+            }
+
+            .media-state-overlay {
+              position: absolute;
+              top: 0;
+              left: 0;
+              right: 0;
+              bottom: 0;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              gap: 8px;
+              z-index: 3;
+              color: #fff;
+              font-size: 12px;
+              background: rgba(0, 0, 0, 0.7);
+            }
+
+            .media-state-loading .media-state-spin {
+              animation: media-state-spin 1s linear infinite;
+            }
+
+            .media-state-error .el-icon {
+              color: var(--el-color-danger);
+            }
+
+            @keyframes media-state-spin {
+              to {
+                transform: rotate(360deg);
+              }
             }
 
             .media-duration {

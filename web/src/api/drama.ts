@@ -155,7 +155,11 @@ export const dramaAPI = {
     scene_id?: number;
     duration: number;
   }) {
-    return request.post('/storyboards', data)
+    return request.post<{ id: number }>('/storyboards', data)
+  },
+
+  reorderStoryboards(episodeId: string, storyboardIds: number[]) {
+    return request.put(`/episodes/${episodeId}/storyboards/order`, { storyboard_ids: storyboardIds })
   },
 
   deleteStoryboard(storyboardId: number) {

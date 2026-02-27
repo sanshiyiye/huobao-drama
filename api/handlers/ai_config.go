@@ -73,6 +73,29 @@ func (h *AIConfigHandler) ListConfigs(c *gin.Context) {
 	response.Success(c, configs)
 }
 
+// GetDefaultConfig 返回当前默认配置（与生图/生视频等实际使用的逻辑一致）
+func (h *AIConfigHandler) GetDefaultConfig(c *gin.Context) {
+	serviceType := c.Query("service_type")
+	if serviceType == "" {
+		response.BadRequest(c, "缺少 service_type 参数")
+		return
+	}
+	config, err := h.aiService.GetDefaultConfig(serviceType)
+	if err != nil {
+		response.NotFound(c, "未配置默认模型，请在图文配置中设置")
+		return
+	}
+	model := ""
+	if len(config.Model) > 0 {
+		model = config.Model[0]
+	}
+	response.Success(c, gin.H{
+		"model":    model,
+		"provider": config.Provider,
+		"name":     config.Name,
+	})
+}
+
 func (h *AIConfigHandler) UpdateConfig(c *gin.Context) {
 
 	configID, err := strconv.ParseUint(c.Param("id"), 10, 32)
