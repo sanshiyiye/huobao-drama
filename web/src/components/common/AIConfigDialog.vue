@@ -360,6 +360,7 @@ const providerConfigs: Record<AIServiceType, ProviderConfig[]> = {
       name: "火山引擎",
       models: [
         "doubao-seedance-1-5-pro-251215",
+        "doubao-seedance-1.0-pro-fast",
         "doubao-seedance-1-0-lite-i2v-250428",
         "doubao-seedance-1-0-lite-t2v-250428",
         "doubao-seedance-1-0-pro-250528",
@@ -371,6 +372,7 @@ const providerConfigs: Record<AIServiceType, ProviderConfig[]> = {
       name: "Chatfire",
       models: [
         "doubao-seedance-1-5-pro-251215",
+        "doubao-seedance-1.0-pro-fast",
         "doubao-seedance-1-0-lite-i2v-250428",
         "doubao-seedance-1-0-lite-t2v-250428",
         "doubao-seedance-1-0-pro-250528",

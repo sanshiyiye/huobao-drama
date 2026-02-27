@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -26,7 +27,32 @@ type BatchService struct {
 	imageGenService  *ImageGenerationService
 	framePromptSvc   *FramePromptService
 	videoGenService  *VideoGenerationService
+	videoMergeSvc    *VideoMergeService
 	log              *logger.Logger
+}
+
+// EpisodeVideoTaskResult 一键章节视频任务结果
+type EpisodeVideoTaskResult struct {
+	Success        bool   `json:"success"`
+	CurrentPhase   string `json:"current_phase"`   // frames, videos, merge, completed, failed, cancelled
+	PhaseMessage   string `json:"phase_message"`
+	TotalStoryboards int   `json:"total_storyboards"`
+	CompletedFrames int   `json:"completed_frames"`  // 已完成生图的分镜数
+	CompletedVideos int   `json:"completed_videos"`  // 已完成出片的分镜数
+	FailedStoryboards []int `json:"failed_storyboards,omitempty"` // 失败的分镜编号列表
+	MergeID        *uint  `json:"merge_id,omitempty"`
+	Error          string `json:"error,omitempty"`
+}
+
+// EpisodeVideoTaskProgress 用于存储在 AsyncTask.Result 中的进度状态
+type EpisodeVideoTaskProgress struct {
+	Phase          string `json:"phase"`
+	TotalStoryboards int   `json:"total_storyboards"`
+	CurrentStoryboard int  `json:"current_storyboard"` // 当前处理到第几个分镜
+	CompletedFrames int   `json:"completed_frames"`
+	CompletedVideos int   `json:"completed_videos"`
+	Cancelled      bool   `json:"cancelled"`
+	FailedStoryboards []int `json:"failed_storyboards,omitempty"` // 失败的分镜编号列表
 }
 
 // NewBatchService 创建批量服务
@@ -36,6 +62,7 @@ func NewBatchService(
 	imageGenService *ImageGenerationService,
 	framePromptSvc *FramePromptService,
 	videoGenService *VideoGenerationService,
+	videoMergeSvc *VideoMergeService,
 	log *logger.Logger,
 ) *BatchService {
 	return &BatchService{
@@ -44,6 +71,7 @@ func NewBatchService(
 		imageGenService:  imageGenService,
 		framePromptSvc:   framePromptSvc,
 		videoGenService:  videoGenService,
+		videoMergeSvc:    videoMergeSvc,
 		log:              log,
 	}
 }
@@ -612,4 +640,537 @@ func (s *BatchService) generateVideoForStoryboard(dramaID string, sb *models.Sto
 	}
 
 	return fmt.Errorf("视频生成超时")
+}
+
+// BatchGenerateEpisodeVideo 创建一键章节视频任务（生图→出片→合成）
+func (s *BatchService) BatchGenerateEpisodeVideo(episodeID string, model string, dramaID string) (string, error) {
+	task, err := s.taskService.CreateTask("batch_generate_episode_video", episodeID)
+	if err != nil {
+		return "", fmt.Errorf("创建任务失败: %w", err)
+	}
+
+	go s.processEpisodeVideo(task.ID, episodeID, model, dramaID)
+
+	s.log.Infow("Batch generate episode video task created",
+		"task_id", task.ID,
+		"episode_id", episodeID,
+		"model", model)
+
+	return task.ID, nil
+}
+
+// RetryEpisodeVideoPhase 重试一键章节视频的某个阶段（仅重试失败的分镜）
+func (s *BatchService) RetryEpisodeVideoPhase(taskID string, phase string) (string, error) {
+	oldTask, err := s.taskService.GetTask(taskID)
+	if err != nil {
+		return "", fmt.Errorf("原任务不存在")
+	}
+
+	var progress EpisodeVideoTaskProgress
+	if oldTask.Result != "" {
+		json.Unmarshal([]byte(oldTask.Result), &progress)
+	}
+
+	episodeID := oldTask.ResourceID
+	newTask, err := s.taskService.CreateTask("batch_generate_episode_video", episodeID)
+	if err != nil {
+		return "", fmt.Errorf("创建任务失败: %w", err)
+	}
+
+	go func() {
+		if phase == "frames" {
+			s.processEpisodeVideo(newTask.ID, episodeID, "", "")
+		} else if phase == "videos" {
+			s.processEpisodeVideoFromVideos(newTask.ID, episodeID, "", "", &progress)
+		} else if phase == "merge" {
+			s.processEpisodeVideoFromMerge(newTask.ID, episodeID, "", "")
+		}
+	}()
+
+	return newTask.ID, nil
+}
+
+// CancelEpisodeVideoTask 取消一键章节视频任务
+func (s *BatchService) CancelEpisodeVideoTask(taskID string) error {
+	task, err := s.taskService.GetTask(taskID)
+	if err != nil {
+		return err
+	}
+
+	if task.Status != "pending" && task.Status != "processing" {
+		return fmt.Errorf("task is not cancellable")
+	}
+
+	var progress EpisodeVideoTaskProgress
+	if task.Result != "" {
+		json.Unmarshal([]byte(task.Result), &progress)
+	}
+	progress.Cancelled = true
+
+	result := EpisodeVideoTaskResult{
+		Success:         false,
+		CurrentPhase:    "cancelled",
+		PhaseMessage:    "已取消",
+		TotalStoryboards: progress.TotalStoryboards,
+		CompletedFrames: progress.CompletedFrames,
+		CompletedVideos: progress.CompletedVideos,
+	}
+	resultJSON, _ := json.Marshal(result)
+
+	s.db.Model(&models.AsyncTask{}).Where("id = ?", taskID).Updates(map[string]interface{}{
+		"status":   "completed",
+		"progress": 0,
+		"message":  "已取消",
+		"result":   string(resultJSON),
+	})
+
+	return nil
+}
+
+// processEpisodeVideo 异步执行一键章节视频流程（完整流程）
+func (s *BatchService) processEpisodeVideo(taskID string, episodeID string, model string, dramaID string) {
+	var episode models.Episode
+	if err := s.db.Preload("Storyboards").Preload("Drama").Where("id = ?", episodeID).First(&episode).Error; err != nil {
+		s.taskService.UpdateTaskError(taskID, fmt.Errorf("剧集不存在"))
+		return
+	}
+
+	storyboards := episode.Storyboards
+	if len(storyboards) == 0 {
+		s.taskService.UpdateTaskError(taskID, fmt.Errorf("没有分镜"))
+		return
+	}
+
+	sort.Slice(storyboards, func(i, j int) bool {
+		return storyboards[i].StoryboardNumber < storyboards[j].StoryboardNumber
+	})
+
+	total := len(storyboards)
+	dramaIDStr := strconv.FormatUint(uint64(episode.DramaID), 10)
+	if dramaID != "" {
+		dramaIDStr = dramaID
+	}
+
+	progress := EpisodeVideoTaskProgress{
+		Phase:             "frames",
+		TotalStoryboards:  total,
+		CurrentStoryboard: 0,
+		CompletedFrames:   0,
+		CompletedVideos:   0,
+		Cancelled:         false,
+		FailedStoryboards: []int{},
+	}
+
+	s.updateEpisodeVideoProgress(taskID, &progress, "阶段1/3：正在生图...", 0)
+
+	failedInFrames := false
+	for i, sb := range storyboards {
+		if s.checkEpisodeVideoCancelled(taskID, &progress) {
+			s.updateEpisodeVideoCancelled(taskID, &progress)
+			return
+		}
+
+		progress.CurrentStoryboard = sb.StoryboardNumber
+		msg := fmt.Sprintf("阶段1/3：正在生图（%d/%d）- 分镜%d", i+1, total, sb.StoryboardNumber)
+		s.updateEpisodeVideoProgress(taskID, &progress, msg, (i*100)/(total*3))
+
+		err := s.generateFirstLastFramesForStoryboard(dramaIDStr, &sb)
+		if err != nil {
+			s.log.Warnw("Frame generation failed for storyboard",
+				"storyboard_id", sb.ID,
+				"storyboard_number", sb.StoryboardNumber,
+				"error", err)
+			progress.FailedStoryboards = append(progress.FailedStoryboards, sb.StoryboardNumber)
+			failedInFrames = true
+			break
+		}
+
+		progress.CompletedFrames = i + 1
+	}
+
+	if failedInFrames {
+		s.updateEpisodeVideoError(taskID, &progress,
+			fmt.Sprintf("分镜%d生图失败", progress.FailedStoryboards[len(progress.FailedStoryboards)-1]))
+		return
+	}
+
+	s.updateEpisodeVideoProgress(taskID, &progress, "生图完成，等待3秒...", 33)
+	time.Sleep(3 * time.Second)
+
+	if s.checkEpisodeVideoCancelled(taskID, &progress) {
+		s.updateEpisodeVideoCancelled(taskID, &progress)
+		return
+	}
+
+	progress.Phase = "videos"
+	s.updateEpisodeVideoProgress(taskID, &progress, "阶段2/3：正在出片...", 33)
+
+	provider := "doubao"
+	if model != "" {
+		provider = extractProviderFromModelName(model)
+	}
+	duration := 5
+	failedInVideos := false
+
+	for i, sb := range storyboards {
+		if s.checkEpisodeVideoCancelled(taskID, &progress) {
+			s.updateEpisodeVideoCancelled(taskID, &progress)
+			return
+		}
+
+		progress.CurrentStoryboard = sb.StoryboardNumber
+		msg := fmt.Sprintf("阶段2/3：正在出片（%d/%d）- 分镜%d", i+1, total, sb.StoryboardNumber)
+		overallProgress := 33 + (i*33)/(total*3)
+		s.updateEpisodeVideoProgress(taskID, &progress, msg, overallProgress)
+
+		err := s.generateVideoForStoryboard(dramaIDStr, &sb, model, provider, duration)
+		if err != nil {
+			s.log.Warnw("Video generation failed for storyboard",
+				"storyboard_id", sb.ID,
+				"storyboard_number", sb.StoryboardNumber,
+				"error", err)
+			progress.FailedStoryboards = append(progress.FailedStoryboards, sb.StoryboardNumber)
+			failedInVideos = true
+			break
+		}
+
+		progress.CompletedVideos = i + 1
+	}
+
+	if failedInVideos {
+		s.updateEpisodeVideoError(taskID, &progress,
+			fmt.Sprintf("分镜%d出片失败", progress.FailedStoryboards[len(progress.FailedStoryboards)-1]))
+		return
+	}
+
+	s.updateEpisodeVideoProgress(taskID, &progress, "出片完成，等待3秒...", 66)
+	time.Sleep(3 * time.Second)
+
+	if s.checkEpisodeVideoCancelled(taskID, &progress) {
+		s.updateEpisodeVideoCancelled(taskID, &progress)
+		return
+	}
+
+	progress.Phase = "merge"
+	s.updateEpisodeVideoProgress(taskID, &progress, "阶段3/3：正在合成...", 66)
+
+	mergeReq := &OneClickMergeRequest{
+		EpisodeID: episodeID,
+		DramaID:   dramaIDStr,
+		Title:     fmt.Sprintf("%s - 第%d集", episode.Drama.Title, episode.EpisodeNum),
+	}
+
+	videoMerge, err := s.videoMergeSvc.OneClickMerge(mergeReq)
+	if err != nil {
+		s.updateEpisodeVideoError(taskID, &progress, fmt.Sprintf("合成失败: %v", err))
+		return
+	}
+
+	mergePollInterval := 3 * time.Second
+
+	for {
+		if s.checkEpisodeVideoCancelled(taskID, &progress) {
+			s.updateEpisodeVideoCancelled(taskID, &progress)
+			return
+		}
+
+		var merge models.VideoMerge
+		if err := s.db.First(&merge, videoMerge.ID).Error; err == nil {
+			if merge.Status == models.VideoMergeStatusCompleted {
+				progress.Phase = "completed"
+				result := EpisodeVideoTaskResult{
+					Success:         true,
+					CurrentPhase:    "completed",
+					PhaseMessage:    "全部完成！",
+					TotalStoryboards: total,
+					CompletedFrames: progress.CompletedFrames,
+					CompletedVideos: progress.CompletedVideos,
+					MergeID:         &videoMerge.ID,
+				}
+				s.taskService.UpdateTaskResult(taskID, result)
+				s.taskService.UpdateTaskStatus(taskID, "completed", 100, "全部完成！")
+				return
+			}
+
+			if merge.Status == models.VideoMergeStatusFailed {
+				s.updateEpisodeVideoError(taskID, &progress,
+					fmt.Sprintf("合成失败: %s", merge.ErrorMsg))
+				return
+			}
+		}
+
+		s.updateEpisodeVideoProgress(taskID, &progress, "阶段3/3：正在合成视频...", 80)
+		time.Sleep(mergePollInterval)
+	}
+}
+
+// processEpisodeVideoFromVideos 从视频阶段开始重试（跳过已成功生图的分镜）
+func (s *BatchService) processEpisodeVideoFromVideos(taskID string, episodeID string, model string, dramaID string, previousProgress *EpisodeVideoTaskProgress) {
+	var episode models.Episode
+	if err := s.db.Preload("Storyboards").Preload("Drama").Where("id = ?", episodeID).First(&episode).Error; err != nil {
+		s.taskService.UpdateTaskError(taskID, fmt.Errorf("剧集不存在"))
+		return
+	}
+
+	storyboards := episode.Storyboards
+	if len(storyboards) == 0 {
+		s.taskService.UpdateTaskError(taskID, fmt.Errorf("没有分镜"))
+		return
+	}
+
+	sort.Slice(storyboards, func(i, j int) bool {
+		return storyboards[i].StoryboardNumber < storyboards[j].StoryboardNumber
+	})
+
+	total := len(storyboards)
+	dramaIDStr := strconv.FormatUint(uint64(episode.DramaID), 10)
+	if dramaID != "" {
+		dramaIDStr = dramaID
+	}
+
+	progress := EpisodeVideoTaskProgress{
+		Phase:             "videos",
+		TotalStoryboards:  total,
+		CurrentStoryboard: 0,
+		CompletedFrames:   previousProgress.CompletedFrames,
+		CompletedVideos:   0,
+		Cancelled:         false,
+		FailedStoryboards: []int{},
+	}
+
+	provider := "doubao"
+	if model != "" {
+		provider = extractProviderFromModelName(model)
+	}
+	duration := 5
+	failedInVideos := false
+
+	for i, sb := range storyboards {
+		if s.checkEpisodeVideoCancelled(taskID, &progress) {
+			s.updateEpisodeVideoCancelled(taskID, &progress)
+			return
+		}
+
+		progress.CurrentStoryboard = sb.StoryboardNumber
+		msg := fmt.Sprintf("阶段2/3：正在出片（%d/%d）- 分镜%d", i+1, total, sb.StoryboardNumber)
+		overallProgress := 33 + (i*33)/(total*3)
+		s.updateEpisodeVideoProgress(taskID, &progress, msg, overallProgress)
+
+		err := s.generateVideoForStoryboard(dramaIDStr, &sb, model, provider, duration)
+		if err != nil {
+			s.log.Warnw("Video generation failed for storyboard",
+				"storyboard_id", sb.ID,
+				"storyboard_number", sb.StoryboardNumber,
+				"error", err)
+			progress.FailedStoryboards = append(progress.FailedStoryboards, sb.StoryboardNumber)
+			failedInVideos = true
+			break
+		}
+
+		progress.CompletedVideos = i + 1
+	}
+
+	if failedInVideos {
+		s.updateEpisodeVideoError(taskID, &progress,
+			fmt.Sprintf("分镜%d出片失败", progress.FailedStoryboards[len(progress.FailedStoryboards)-1]))
+		return
+	}
+
+	s.updateEpisodeVideoProgress(taskID, &progress, "出片完成，等待3秒...", 66)
+	time.Sleep(3 * time.Second)
+
+	if s.checkEpisodeVideoCancelled(taskID, &progress) {
+		s.updateEpisodeVideoCancelled(taskID, &progress)
+		return
+	}
+
+	progress.Phase = "merge"
+	s.updateEpisodeVideoProgress(taskID, &progress, "阶段3/3：正在合成...", 66)
+
+	mergeReq := &OneClickMergeRequest{
+		EpisodeID: episodeID,
+		DramaID:   dramaIDStr,
+		Title:     fmt.Sprintf("%s - 第%d集", episode.Drama.Title, episode.EpisodeNum),
+	}
+
+	videoMerge, err := s.videoMergeSvc.OneClickMerge(mergeReq)
+	if err != nil {
+		s.updateEpisodeVideoError(taskID, &progress, fmt.Sprintf("合成失败: %v", err))
+		return
+	}
+
+	mergePollInterval := 3 * time.Second
+
+	for {
+		if s.checkEpisodeVideoCancelled(taskID, &progress) {
+			s.updateEpisodeVideoCancelled(taskID, &progress)
+			return
+		}
+
+		var merge models.VideoMerge
+		if err := s.db.First(&merge, videoMerge.ID).Error; err == nil {
+			if merge.Status == models.VideoMergeStatusCompleted {
+				progress.Phase = "completed"
+				result := EpisodeVideoTaskResult{
+					Success:         true,
+					CurrentPhase:    "completed",
+					PhaseMessage:    "全部完成！",
+					TotalStoryboards: total,
+					CompletedFrames: progress.CompletedFrames,
+					CompletedVideos: progress.CompletedVideos,
+					MergeID:         &videoMerge.ID,
+				}
+				s.taskService.UpdateTaskResult(taskID, result)
+				s.taskService.UpdateTaskStatus(taskID, "completed", 100, "全部完成！")
+				return
+			}
+
+			if merge.Status == models.VideoMergeStatusFailed {
+				s.updateEpisodeVideoError(taskID, &progress,
+					fmt.Sprintf("合成失败: %s", merge.ErrorMsg))
+				return
+			}
+		}
+
+		s.updateEpisodeVideoProgress(taskID, &progress, "阶段3/3：正在合成视频...", 80)
+		time.Sleep(mergePollInterval)
+	}
+}
+
+// processEpisodeVideoFromMerge 从合成阶段开始重试
+func (s *BatchService) processEpisodeVideoFromMerge(taskID string, episodeID string, model string, dramaID string) {
+	var episode models.Episode
+	if err := s.db.Preload("Drama").Where("id = ?", episodeID).First(&episode).Error; err != nil {
+		s.taskService.UpdateTaskError(taskID, fmt.Errorf("剧集不存在"))
+		return
+	}
+
+	dramaIDStr := strconv.FormatUint(uint64(episode.DramaID), 10)
+	if dramaID != "" {
+		dramaIDStr = dramaID
+	}
+
+	progress := EpisodeVideoTaskProgress{
+		Phase:             "merge",
+		TotalStoryboards:  0,
+		CurrentStoryboard: 0,
+		CompletedFrames:   0,
+		CompletedVideos:   0,
+		Cancelled:         false,
+		FailedStoryboards: []int{},
+	}
+
+	s.updateEpisodeVideoProgress(taskID, &progress, "阶段3/3：正在合成...", 66)
+
+	mergeReq := &OneClickMergeRequest{
+		EpisodeID: episodeID,
+		DramaID:   dramaIDStr,
+		Title:     fmt.Sprintf("%s - 第%d集", episode.Drama.Title, episode.EpisodeNum),
+	}
+
+	videoMerge, err := s.videoMergeSvc.OneClickMerge(mergeReq)
+	if err != nil {
+		s.updateEpisodeVideoError(taskID, &progress, fmt.Sprintf("合成失败: %v", err))
+		return
+	}
+
+	mergePollInterval := 3 * time.Second
+
+	for {
+		if s.checkEpisodeVideoCancelled(taskID, &progress) {
+			s.updateEpisodeVideoCancelled(taskID, &progress)
+			return
+		}
+
+		var merge models.VideoMerge
+		if err := s.db.First(&merge, videoMerge.ID).Error; err == nil {
+			if merge.Status == models.VideoMergeStatusCompleted {
+				progress.Phase = "completed"
+				result := EpisodeVideoTaskResult{
+					Success:         true,
+					CurrentPhase:    "completed",
+					PhaseMessage:    "全部完成！",
+					TotalStoryboards: progress.TotalStoryboards,
+					CompletedFrames: progress.CompletedFrames,
+					CompletedVideos: progress.CompletedVideos,
+					MergeID:         &videoMerge.ID,
+				}
+				s.taskService.UpdateTaskResult(taskID, result)
+				s.taskService.UpdateTaskStatus(taskID, "completed", 100, "全部完成！")
+				return
+			}
+
+			if merge.Status == models.VideoMergeStatusFailed {
+				s.updateEpisodeVideoError(taskID, &progress,
+					fmt.Sprintf("合成失败: %s", merge.ErrorMsg))
+				return
+			}
+		}
+
+		s.updateEpisodeVideoProgress(taskID, &progress, "阶段3/3：正在合成视频...", 80)
+		time.Sleep(mergePollInterval)
+	}
+}
+
+// updateEpisodeVideoProgress 更新一键章节视频进度
+func (s *BatchService) updateEpisodeVideoProgress(taskID string, progress *EpisodeVideoTaskProgress, message string, overallProgress int) {
+	resultJSON, _ := json.Marshal(progress)
+	s.db.Model(&models.AsyncTask{}).Where("id = ?", taskID).Updates(map[string]interface{}{
+		"status":   "processing",
+		"progress": overallProgress,
+		"message":  message,
+		"result":   string(resultJSON),
+	})
+}
+
+// updateEpisodeVideoError 更新一键章节视频错误
+func (s *BatchService) updateEpisodeVideoError(taskID string, progress *EpisodeVideoTaskProgress, errMsg string) {
+	progress.Phase = "failed"
+	result := EpisodeVideoTaskResult{
+		Success:           false,
+		CurrentPhase:      progress.Phase,
+		PhaseMessage:      errMsg,
+		TotalStoryboards:  progress.TotalStoryboards,
+		CompletedFrames:   progress.CompletedFrames,
+		CompletedVideos:   progress.CompletedVideos,
+		FailedStoryboards: progress.FailedStoryboards,
+		Error:             errMsg,
+	}
+	s.taskService.UpdateTaskResult(taskID, result)
+	s.taskService.UpdateTaskError(taskID, fmt.Errorf(errMsg))
+}
+
+// updateEpisodeVideoCancelled 更新一键章节视频为已取消
+func (s *BatchService) updateEpisodeVideoCancelled(taskID string, progress *EpisodeVideoTaskProgress) {
+	progress.Phase = "cancelled"
+	result := EpisodeVideoTaskResult{
+		Success:         false,
+		CurrentPhase:    "cancelled",
+		PhaseMessage:    "已取消",
+		TotalStoryboards: progress.TotalStoryboards,
+		CompletedFrames: progress.CompletedFrames,
+		CompletedVideos: progress.CompletedVideos,
+	}
+	s.taskService.UpdateTaskResult(taskID, result)
+	s.taskService.UpdateTaskStatus(taskID, "completed", 0, "已取消")
+}
+
+// checkEpisodeVideoCancelled 检查是否已取消
+func (s *BatchService) checkEpisodeVideoCancelled(taskID string, progress *EpisodeVideoTaskProgress) bool {
+	task, err := s.taskService.GetTask(taskID)
+	if err != nil {
+		return false
+	}
+
+	if task.Result != "" {
+		var storedProgress EpisodeVideoTaskProgress
+		if json.Unmarshal([]byte(task.Result), &storedProgress) == nil {
+			if storedProgress.Cancelled {
+				progress.Cancelled = true
+				return true
+			}
+		}
+	}
+
+	return false
 }

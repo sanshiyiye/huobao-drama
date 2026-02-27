@@ -193,10 +193,45 @@
                     <span>{{ $t('video.oneClickMerge') }}</span>
                   </el-button>
                 </div>
-                <!-- 一键生图/出片/合成进度弹窗 -->
+                <!-- 第二行：选择视频模型 + 一键视频 -->
+                <div class="batch-one-click batch-one-click-row2">
+                  <div class="batch-one-click-video-wrap">
+                    <div class="batch-one-click-model-wrap">
+                      <el-select
+                        v-model="oneClickVideoModel"
+                        :placeholder="$t('video.selectVideoModel')"
+                        size="default"
+                        class="batch-one-click-model-select"
+                        filterable
+                      >
+                        <el-option
+                          v-for="m in batchVideoModelsFirstLast"
+                          :key="m.id"
+                          :label="m.name"
+                          :value="m.id"
+                        >
+                          <div class="batch-one-click-model-option">
+                            <span>{{ m.name }}</span>
+                            <span class="batch-one-click-model-tags">
+                              <template v-if="m.supportTextOnly">文生</template>
+                              <template v-if="m.supportSingleImage"> | 单图</template>
+                              <template v-if="m.supportFirstLastFrame"> | 首尾帧</template>
+                              <template v-if="m.supportAudio"> | 有声</template>
+                            </span>
+                          </div>
+                        </el-option>
+                      </el-select>
+                    </div>
+                    <el-button class="batch-flat-btn batch-flat-btn-lg" @click="handleOneClickEpisodeVideo">
+                      <el-icon><VideoPlay /></el-icon>
+                      <span>{{ $t('video.oneClickVideo') }}</span>
+                    </el-button>
+                  </div>
+                </div>
+                <!-- 一键生图/出片/合成/章节视频进度弹窗 -->
                 <el-dialog
                   v-model="batchProgressVisible"
-                  :title="batchProgressType === 'frames' ? '一键生图' : (batchProgressType === 'merge' ? '一键合成' : '一键出片')"
+                  :title="getBatchProgressTitle()"
                   width="420px"
                   class="batch-progress-dialog"
                   :close-on-click-modal="false"
@@ -221,8 +256,39 @@
                     </template>
                   </div>
                   <template #footer>
+                    <template v-if="batchProgressType === 'episode'">
+                      <el-button
+                        v-if="!batchResult"
+                        type="danger"
+                        @click="handleCancelEpisodeVideoClick"
+                      >
+                        取消
+                      </el-button>
+                      <template v-if="batchResult && batchResult.failed > 0">
+                        <el-button
+                          type="warning"
+                          @click="handleRetryEpisodePhase('frames')"
+                        >
+                          重试生图阶段
+                        </el-button>
+                        <el-button
+                          v-if="canRetryVideosPhase"
+                          type="warning"
+                          @click="handleRetryEpisodePhase('videos')"
+                        >
+                          重试出片阶段
+                        </el-button>
+                        <el-button
+                          v-if="canRetryMergePhase"
+                          type="warning"
+                          @click="handleRetryEpisodePhase('merge')"
+                        >
+                          重试合成阶段
+                        </el-button>
+                      </template>
+                    </template>
                     <el-button
-                      v-if="batchResult && batchResult.failed > 0"
+                      v-if="batchResult && batchResult.failed > 0 && batchProgressType === 'frames'"
                       type="warning"
                       @click="handleRetryFailedFrames"
                     >
@@ -1151,8 +1217,8 @@
                   }}
                 </div>
 
-                <!-- 视效设置 -->
-                <div class="settings-section">
+                <!-- 视效设置（不参与提示词生成视频，隐藏） -->
+                <div v-show="false" class="settings-section">
                   <div class="section-label">
                     {{ $t("editor.visualSettings") }}
                   </div>
@@ -1232,8 +1298,8 @@
                   </div>
                 </div>
 
-                <!-- 音效设置 -->
-                <div class="settings-section">
+                <!-- 音效设置（不参与提示词生成视频，隐藏） -->
+                <div v-show="false" class="settings-section">
                   <div class="section-label">{{ $t("editor.soundEffects") }}</div>
                   <div class="audio-controls">
                     <el-input
@@ -1247,8 +1313,8 @@
                   </div>
                 </div>
 
-                <!-- 配乐设置 -->
-                <div class="settings-section">
+                <!-- 配乐设置（不参与提示词生成视频，隐藏） -->
+                <div v-show="false" class="settings-section">
                   <div class="section-label">{{ $t("editor.bgmPrompt") }}</div>
                   <div class="audio-controls">
                     <el-input
@@ -1262,8 +1328,8 @@
                   </div>
                 </div>
 
-                <!-- 对话设置 -->
-                <div class="settings-section">
+                <!-- 对话设置（不参与提示词生成视频，隐藏） -->
+                <div v-show="false" class="settings-section">
                   <div class="section-label">{{ $t("editor.dialogue") }}</div>
                   <div class="audio-controls">
                     <el-input
@@ -1292,8 +1358,8 @@
                   </div>
                 </div>
 
-                <!-- 氛围设置 -->
-                <div class="settings-section">
+                <!-- 氛围设置（不参与提示词生成视频，隐藏） -->
+                <div v-show="false" class="settings-section">
                   <div class="section-label">{{ $t("editor.atmosphere") }}</div>
                   <div class="audio-controls">
                     <el-input
@@ -1888,9 +1954,27 @@ const batchImageProgress = ref<{
   pending: number;
   processing: number;
 } | null>(null);
-const batchProgressType = ref<"frames" | "videos" | "merge">("frames");
+const batchProgressType = ref<"frames" | "videos" | "merge" | "episode">("frames");
 const mergeTaskId = ref<number | null>(null);
 let batchProgressTimerRef: ReturnType<typeof setTimeout> | null = null;
+
+// 存储上一次的一键章节视频任务结果，用于重试
+const lastEpisodeVideoResult = ref<any>(null);
+
+// 是否可以重试各个阶段
+const canRetryVideosPhase = computed(() => {
+  if (!lastEpisodeVideoResult.value) return false;
+  return lastEpisodeVideoResult.value?.completed_frames > 0 &&
+         lastEpisodeVideoResult.value?.current_phase === 'failed' &&
+         lastEpisodeVideoResult.value?.failed_storyboards?.length > 0;
+});
+
+const canRetryMergePhase = computed(() => {
+  if (!lastEpisodeVideoResult.value) return false;
+  return lastEpisodeVideoResult.value?.completed_frames > 0 &&
+         lastEpisodeVideoResult.value?.completed_videos > 0 &&
+         lastEpisodeVideoResult.value?.current_phase === 'failed';
+});
 const BATCH_IMAGE_PROGRESS_TIMEOUT_MS = 30 * 60 * 1000; // 30 分钟
 const previewImageUrl = ref<string>(""); // 预览大图的URL
 const videoModelCapabilities = ref<VideoModelCapability[]>([]);
@@ -2608,6 +2692,295 @@ const startMergeProgressPolling = (mergeId: number) => {
   };
 
   schedule(pollMerge, 1000);
+};
+
+// 一键章节视频处理函数
+const handleOneClickEpisodeVideo = async () => {
+  if (!episodeId.value) {
+    ElMessage.warning('请先选择剧集');
+    return;
+  }
+  const model = oneClickVideoModel.value || selectedVideoModel.value;
+  if (!model) {
+    ElMessage.warning('请先选择一键出片使用的视频模型');
+    return;
+  }
+
+  try {
+    if (!storyboards.value || storyboards.value.length === 0) {
+      ElMessage.warning('当前剧集没有分镜');
+      return;
+    }
+
+    lastEpisodeVideoResult.value = null;
+    batchTaskId.value = '';
+    batchProgressType.value = 'episode';
+    batchProgressVisible.value = true;
+    batchProgressPercent.value = 0;
+    batchProgressMessage.value = '正在提交任务...';
+    batchResult.value = null;
+    batchImageProgress.value = null;
+    clearBatchProgressTimer();
+
+    const data = await batchAPI.generateEpisodeVideo({
+      episode_id: episodeId.value.toString(),
+      drama_id: dramaId.value?.toString(),
+      model: model
+    });
+    const taskId = data?.task_id;
+    if (!taskId) {
+      throw new Error('未返回任务 ID');
+    }
+
+    batchTaskId.value = taskId;
+    startEpisodeVideoProgressPolling(taskId);
+  } catch (error: any) {
+    console.error('One-click episode video failed:', error);
+    batchProgressMessage.value = error?.message || '执行失败';
+    ElMessage.error(error?.message || '一键章节视频执行失败');
+  }
+};
+
+// 点击取消按钮
+const handleCancelEpisodeVideoClick = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要取消任务吗？取消后需要重新点击"一键章节视频"从头开始。',
+      '取消确认',
+      {
+        confirmButtonText: '确定取消',
+        cancelButtonText: '继续执行',
+        type: 'warning'
+      }
+    );
+    await handleCancelEpisodeVideo();
+  } catch {
+    // 用户点击取消，继续执行
+  }
+};
+
+// 执行取消
+const handleCancelEpisodeVideo = async () => {
+  if (!batchTaskId.value) {
+    return;
+  }
+  try {
+    await batchAPI.cancelEpisodeVideo(batchTaskId.value);
+    batchProgressMessage.value = '取消请求已提交，正在停止...';
+    ElMessage.info('取消请求已提交');
+  } catch (error: any) {
+    console.error('Cancel failed:', error);
+    ElMessage.error('取消失败');
+  }
+};
+
+// 重试某个阶段
+const handleRetryEpisodePhase = async (phase: 'frames' | 'videos' | 'merge') => {
+  if (!lastEpisodeVideoResult.value?.task_id) {
+    ElMessage.warning('没有可重试的任务');
+    return;
+  }
+
+  try {
+    const data = await batchAPI.retryEpisodeVideoPhase({
+      task_id: lastEpisodeVideoResult.value.task_id,
+      phase: phase
+    });
+    const taskId = data?.task_id;
+    if (!taskId) {
+      throw new Error('未返回任务 ID');
+    }
+
+    batchTaskId.value = taskId;
+    batchProgressType.value = 'episode';
+    batchProgressVisible.value = true;
+    batchProgressPercent.value = 0;
+    batchProgressMessage.value = '正在提交重试任务...';
+    batchResult.value = null;
+    startEpisodeVideoProgressPolling(taskId);
+  } catch (error: any) {
+    console.error('Retry failed:', error);
+    ElMessage.error(error?.message || '重试失败');
+  }
+};
+
+// 一键章节视频进度轮询
+const startEpisodeVideoProgressPolling = (taskId: string) => {
+  const POLL_INTERVAL = 2500;
+
+  batchTaskId.value = taskId;
+  batchProgressType.value = 'episode';
+  batchProgressVisible.value = true;
+  batchProgressPercent.value = 0;
+  batchProgressMessage.value = '任务已提交，正在处理...';
+  batchResult.value = null;
+  batchImageProgress.value = null;
+  clearBatchProgressTimer();
+
+  const schedule = (fn: () => void, delay: number) => {
+    if (!batchProgressVisible.value) return;
+    batchProgressTimerRef = setTimeout(fn, delay);
+  };
+
+  const pollTask = async () => {
+    if (!batchProgressVisible.value) return;
+
+    try {
+      const task = await taskAPI.getStatus(taskId);
+      batchProgressPercent.value = task.progress ?? 0;
+      batchProgressMessage.value = task.message || '处理中...';
+
+      if (task.status === 'completed') {
+        try {
+          let result = typeof task.result === 'string' ? JSON.parse(task.result) : task.result;
+
+          lastEpisodeVideoResult.value = {
+            ...result,
+            task_id: taskId
+          };
+
+          batchResult.value = {
+            total: result?.total_storyboards || 0,
+            success: result?.completed_videos || 0,
+            failed: result?.success ? 0 : 1
+          };
+
+          if (result?.success) {
+            batchProgressMessage.value = '全部完成！';
+            ElMessage.success('一键章节视频执行完成！');
+          } else if (result?.current_phase === 'cancelled') {
+            batchProgressMessage.value = '已取消';
+            ElMessage.info('任务已取消');
+          }
+        } catch {
+          batchResult.value = { total: 0, success: 0, failed: 0 };
+        }
+        return;
+      }
+
+      if (task.status === 'failed') {
+        batchProgressMessage.value = task.error || '任务失败';
+        try {
+          let result = typeof task.result === 'string' ? JSON.parse(task.result) : task.result;
+
+          lastEpisodeVideoResult.value = {
+            ...result,
+            task_id: taskId
+          };
+
+          batchResult.value = {
+            total: result?.total_storyboards || 0,
+            success: result?.completed_videos || 0,
+            failed: 1
+          };
+        } catch {
+          batchResult.value = { total: 0, success: 0, failed: 1 };
+        }
+        return;
+      }
+
+      schedule(pollTask, POLL_INTERVAL);
+    } catch (e) {
+      batchProgressMessage.value = '轮询失败，请稍后到任务列表查看';
+    }
+  };
+
+  schedule(pollTask, POLL_INTERVAL);
+};
+
+// 等待批量任务完成
+const waitForBatchTaskComplete = async (taskId: string, type: 'frames' | 'videos', phaseName: string) => {
+  return new Promise<void>((resolve, reject) => {
+    let pollCount = 0;
+    const maxPolls = 360; // 30分钟 (360 * 5秒)
+
+    const poll = async () => {
+      try {
+        const task = await taskAPI.getStatus(taskId);
+
+        if (task.status === 'completed') {
+          batchProgressMessage.value = `${phaseName}完成`;
+          resolve();
+          return;
+        }
+
+        if (task.status === 'failed') {
+          reject(new Error(`${phaseName}失败: ${task.error || '未知错误'}`));
+          return;
+        }
+
+        // 更新进度
+        batchProgressPercent.value = task.progress || 0;
+        batchProgressMessage.value = task.message || `${phaseName}中...`;
+
+        pollCount++;
+        if (pollCount >= maxPolls) {
+          ElMessage.warning(`${phaseName}超时，请稍后在任务列表查看结果`);
+          resolve(); // 超时不阻止继续，让用户自己决定
+          return;
+        }
+
+        // 继续轮询
+        setTimeout(poll, 5000);
+      } catch (error) {
+        console.error(`Poll ${phaseName} failed:`, error);
+        setTimeout(poll, 5000);
+      }
+    };
+
+    poll();
+  });
+};
+
+// 等待合成完成
+const waitForMergeComplete = async (mergeId: number) => {
+  return new Promise<void>((resolve, reject) => {
+    let pollCount = 0;
+    const maxPolls = 360; // 30分钟
+
+    const poll = async () => {
+      try {
+        const merge = await videoMergeAPI.getMerge(mergeId);
+
+        if (merge.status === 'completed') {
+          resolve();
+          return;
+        }
+
+        if (merge.status === 'failed') {
+          reject(new Error(`合成失败: ${merge.error_msg || '未知错误'}`));
+          return;
+        }
+
+        pollCount++;
+        if (pollCount >= maxPolls) {
+          ElMessage.warning('合成超时，请稍后在视频合成列表查看结果');
+          resolve();
+          return;
+        }
+
+        setTimeout(poll, 5000);
+      } catch (error) {
+        console.error('Poll merge failed:', error);
+        setTimeout(poll, 5000);
+      }
+    };
+
+    poll();
+  });
+};
+
+// 获取批量进度弹窗标题
+const getBatchProgressTitle = () => {
+  if (batchProgressType.value === 'frames') {
+    return '一键生图';
+  } else if (batchProgressType.value === 'merge') {
+    return '一键合成';
+  } else if (batchProgressType.value === 'episode') {
+    return '一键章节视频';
+  } else {
+    return '一键出片';
+  }
 };
 
 const closeBatchProgressDialog = () => {

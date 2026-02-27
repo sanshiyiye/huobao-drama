@@ -39,6 +39,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	imageGenService := services2.NewImageGenerationService(db, cfg, transferService, localStoragePtr, log)
 	imageGenHandler := handlers2.NewImageGenerationHandler(db, cfg, log, transferService, localStoragePtr)
 	videoGenHandler := handlers2.NewVideoGenerationHandler(db, transferService, localStoragePtr, aiService, log, promptI18n)
+	videoMergeService := services2.NewVideoMergeService(db, nil, cfg.Storage.LocalPath, cfg.Storage.BaseURL, log)
 	videoMergeHandler := handlers2.NewVideoMergeHandler(db, nil, cfg.Storage.LocalPath, cfg.Storage.BaseURL, log)
 	assetHandler := handlers2.NewAssetHandler(db, cfg, log)
 	characterLibraryService := services2.NewCharacterLibraryService(db, log, cfg)
@@ -49,12 +50,13 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 	}
 	storyboardHandler := handlers2.NewStoryboardHandler(db, cfg, log)
 	sceneHandler := handlers2.NewSceneHandler(db, log, imageGenService)
-		taskHandler := handlers2.NewTaskHandler(db, log)
-		framePromptService := services2.NewFramePromptService(db, cfg, log)
-		framePromptHandler := handlers2.NewFramePromptHandler(framePromptService, log)
-		batchService := services2.NewBatchService(db, services2.NewTaskService(db, log), imageGenService, framePromptService,
-			services2.NewVideoGenerationService(db, transferService, localStoragePtr, aiService, log, promptI18n), log)
-		batchHandler := handlers2.NewBatchHandler(batchService, log)
+	taskHandler := handlers2.NewTaskHandler(db, log)
+	framePromptService := services2.NewFramePromptService(db, cfg, log)
+	framePromptHandler := handlers2.NewFramePromptHandler(framePromptService, log)
+	batchService := services2.NewBatchService(db, services2.NewTaskService(db, log), imageGenService, framePromptService,
+		services2.NewVideoGenerationService(db, transferService, localStoragePtr, aiService, log, promptI18n),
+		videoMergeService, log)
+	batchHandler := handlers2.NewBatchHandler(batchService, log)
 	audioExtractionHandler := handlers2.NewAudioExtractionHandler(log, cfg.Storage.LocalPath)
 	settingsHandler := handlers2.NewSettingsHandler(cfg, log)
 	propHandler := handlers2.NewPropHandler(db, cfg, log, aiService, imageGenService)
@@ -158,6 +160,9 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 			batch.POST("/generate-frames", batchHandler.BatchGenerateFrames)
 			batch.POST("/generate-videos", batchHandler.BatchGenerateVideos)
 			batch.POST("/retry-failed-frames", batchHandler.BatchRetryFailedFrames)
+			batch.POST("/generate-episode-video", batchHandler.BatchGenerateEpisodeVideo)
+			batch.POST("/retry-episode-video-phase", batchHandler.RetryEpisodeVideoPhase)
+			batch.POST("/cancel-episode-video", batchHandler.CancelEpisodeVideoTask)
 		}
 
 		// 场景路由

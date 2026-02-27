@@ -48,4 +48,26 @@ export const batchAPI = {
   getBatchImageProgress(episodeId: string) {
     return request.get<BatchImageProgress>(`/episodes/${episodeId}/batch-image-progress`)
   },
+
+  /** 一键章节视频：生图→出片→合成，返回 task_id */
+  generateEpisodeVideo(data: {
+    episode_id: string
+    drama_id?: string
+    model: string
+  }) {
+    return request.post<{ task_id: string }>('/batch/generate-episode-video', data)
+  },
+
+  /** 重试一键章节视频的某个阶段 */
+  retryEpisodeVideoPhase(data: {
+    task_id: string
+    phase: 'frames' | 'videos' | 'merge'
+  }) {
+    return request.post<{ task_id: string }>('/batch/retry-episode-video-phase', data)
+  },
+
+  /** 取消一键章节视频任务 */
+  cancelEpisodeVideo(taskId: string) {
+    return request.post<{ message: string }>('/batch/cancel-episode-video', { task_id: taskId })
+  },
 }

@@ -107,3 +107,82 @@ func (h *BatchHandler) GetBatchImageProgress(c *gin.Context) {
 
 	response.Success(c, progress)
 }
+
+// BatchGenerateEpisodeVideoRequest 一键章节视频请求
+type BatchGenerateEpisodeVideoRequest struct {
+	EpisodeID string `json:"episode_id" binding:"required"`
+	DramaID   string `json:"drama_id"`
+	Model     string `json:"model"`
+}
+
+// RetryEpisodeVideoPhaseRequest 重试阶段请求
+type RetryEpisodeVideoPhaseRequest struct {
+	TaskID string `json:"task_id" binding:"required"`
+	Phase  string `json:"phase" binding:"required"` // frames, videos, merge
+}
+
+// CancelEpisodeVideoTaskRequest 取消任务请求
+type CancelEpisodeVideoTaskRequest struct {
+	TaskID string `json:"task_id" binding:"required"`
+}
+
+// BatchGenerateEpisodeVideo 一键章节视频：生图→出片→合成，返回 task_id
+func (h *BatchHandler) BatchGenerateEpisodeVideo(c *gin.Context) {
+	var req BatchGenerateEpisodeVideoRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "缺少必要参数")
+		return
+	}
+
+	taskID, err := h.batchService.BatchGenerateEpisodeVideo(req.EpisodeID, req.Model, req.DramaID)
+	if err != nil {
+		h.log.Errorw("Batch generate episode video failed",
+			"error", err,
+			"episode_id", req.EpisodeID)
+		response.InternalError(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{"task_id": taskID})
+}
+
+// RetryEpisodeVideoPhase 重试一键章节视频的某个阶段
+func (h *BatchHandler) RetryEpisodeVideoPhase(c *gin.Context) {
+	var req RetryEpisodeVideoPhaseRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "缺少必要参数")
+		return
+	}
+
+	taskID, err := h.batchService.RetryEpisodeVideoPhase(req.TaskID, req.Phase)
+	if err != nil {
+		h.log.Errorw("Retry episode video phase failed",
+			"error", err,
+			"task_id", req.TaskID,
+			"phase", req.Phase)
+		response.InternalError(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{"task_id": taskID})
+}
+
+// CancelEpisodeVideoTask 取消一键章节视频任务
+func (h *BatchHandler) CancelEpisodeVideoTask(c *gin.Context) {
+	var req CancelEpisodeVideoTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "缺少 task_id")
+		return
+	}
+
+	err := h.batchService.CancelEpisodeVideoTask(req.TaskID)
+	if err != nil {
+		h.log.Errorw("Cancel episode video task failed",
+			"error", err,
+			"task_id", req.TaskID)
+		response.InternalError(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{"message": "任务已取消"})
+}

@@ -785,12 +785,11 @@
             {{ $t("workflow.prevStep") }}
           </el-button>
           <el-button
-            type="success"
             size="large"
             @click="nextStep"
             :disabled="!allImagesGenerated"
           >
-            {{ $t("workflow.nextStepSplitShots") }}
+            {{ $t("workflow.nextStep") }}
             <el-icon><ArrowRight /></el-icon>
           </el-button>
           <div v-if="!allImagesGenerated" style="margin-top: 8px">
