@@ -2679,6 +2679,122 @@ const handleOneClickAllVideos = async () => {
   }
 };
 
+// 检查视频状态函数（并发检查所有分镜）
+const checkVideoStatusForMerge = async (): Promise<{
+  canMerge: boolean;
+  message: string;
+}> => {
+  if (!storyboards.value || storyboards.value.length === 0) {
+    return {
+      canMerge: false,
+      message: '当前剧集没有分镜，无法合成视频'
+    };
+  }
+
+  // 并发请求所有分镜的视频状态
+  const videoStatusPromises = storyboards.value.map(async (storyboard) => {
+    try {
+      const result = await videoAPI.listVideos({
+        storyboard_id: storyboard.id.toString(),
+        page: 1,
+        page_size: 1, // 只需要最新的一个视频
+      });
+
+      const videos = result.items || [];
+      // 按创建时间倒序，获取最新的视频
+      const latestVideo = videos.length > 0 
+        ? videos.sort((a, b) => 
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          )[0]
+        : null;
+
+      return {
+        storyboard_number: storyboard.storyboard_number,
+        storyboard_id: storyboard.id,
+        has_completed_video: latestVideo?.status === 'completed',
+        status: latestVideo?.status || 'no_video',
+      };
+    } catch (error) {
+      console.error(`检查分镜 ${storyboard.storyboard_number} 的视频状态失败:`, error);
+      return {
+        storyboard_number: storyboard.storyboard_number,
+        storyboard_id: storyboard.id,
+        has_completed_video: false,
+        status: 'error',
+      };
+    }
+  });
+
+  // 等待所有请求完成
+  const statuses = await Promise.all(videoStatusPromises);
+
+  const totalScenes = statuses.length;
+  const completedCount = statuses.filter(s => s.has_completed_video).length;
+  const processingCount = statuses.filter(s => s.status === 'processing' || s.status === 'pending').length;
+  const failedCount = statuses.filter(s => s.status === 'failed').length;
+  const noVideoCount = statuses.filter(s => s.status === 'no_video' || s.status === 'error').length;
+  const scenesWithoutVideo = statuses
+    .filter(s => !s.has_completed_video)
+    .map(s => s.storyboard_number);
+
+  // 如果没有已完成的视频，阻止合成
+  if (completedCount === 0) {
+    let message = `无法进行一键合成：\n\n`;
+    message += `• 共有 ${totalScenes} 个分镜\n`;
+    
+    if (processingCount > 0) {
+      message += `• ${processingCount} 个分镜的视频正在生成中，请等待完成\n`;
+    }
+    if (failedCount > 0) {
+      message += `• ${failedCount} 个分镜的视频生成失败\n`;
+    }
+    if (noVideoCount > 0) {
+      message += `• ${noVideoCount} 个分镜还没有生成视频\n`;
+    }
+    
+    if (scenesWithoutVideo.length > 0 && scenesWithoutVideo.length <= 10) {
+      message += `\n缺少视频的分镜编号：${scenesWithoutVideo.join('、')}`;
+    } else if (scenesWithoutVideo.length > 10) {
+      message += `\n缺少视频的分镜编号：${scenesWithoutVideo.slice(0, 10).join('、')} 等共 ${scenesWithoutVideo.length} 个`;
+    }
+    
+    message += `\n\n请先为所有分镜生成并完成视频后再进行合成。`;
+
+    return {
+      canMerge: false,
+      message
+    };
+  }
+
+  // 如果有部分分镜没有完成的视频，给出警告但允许继续
+  if (completedCount < totalScenes) {
+    const missingCount = totalScenes - completedCount;
+    const confirmed = await ElMessageBox.confirm(
+      `检测到 ${completedCount}/${totalScenes} 个分镜有已完成的视频。\n` +
+      `有 ${missingCount} 个分镜没有已完成的视频，这些分镜将被跳过。\n\n` +
+      `是否继续合成？`,
+      '部分分镜缺少视频',
+      {
+        confirmButtonText: '继续合成',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    ).catch(() => false);
+
+    if (!confirmed) {
+      return {
+        canMerge: false,
+        message: '用户取消操作'
+      };
+    }
+  }
+
+  return {
+    canMerge: true,
+    message: ''
+  };
+};
+
 // 一键合成处理函数
 const handleOneClickMerge = async () => {
   if (!episodeId.value) {
@@ -2690,6 +2806,21 @@ const handleOneClickMerge = async () => {
     // 验证是否有分镜
     if (!storyboards.value || storyboards.value.length === 0) {
       ElMessage.warning('当前剧集没有分镜，无法合成视频');
+      return;
+    }
+
+    // 检查所有分镜是否有已完成的视频（并发检查）
+    const videoStatusCheck = await checkVideoStatusForMerge();
+    if (!videoStatusCheck.canMerge) {
+      // 显示详细的提示信息
+      await ElMessageBox.alert(
+        videoStatusCheck.message,
+        '无法进行一键合成',
+        {
+          confirmButtonText: '知道了',
+          type: 'warning',
+        }
+      );
       return;
     }
 
@@ -2717,6 +2848,10 @@ const handleOneClickMerge = async () => {
     startMergeProgressPolling(mergeResult.id);
   } catch (error: any) {
     console.error('One-click merge failed:', error);
+    // 如果是用户取消操作，不显示错误提示
+    if (error?.message === '用户取消操作') {
+      return;
+    }
     batchProgressMessage.value = error?.message || '合成失败';
     ElMessage.error(error?.message || '一键合成失败，请重试');
   }
