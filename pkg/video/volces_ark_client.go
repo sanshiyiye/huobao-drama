@@ -94,6 +94,8 @@ func (c *VolcesArkClient) GenerateVideo(imageURL, prompt string, opts ...VideoOp
 
 	// 构建prompt文本（包含duration和ratio参数）
 	promptText := prompt
+	fmt.Printf("[VolcesARK] Original prompt (length: %d): %q\n", len(prompt), prompt)
+
 	if options.AspectRatio != "" {
 		promptText += fmt.Sprintf("  --ratio %s", options.AspectRatio)
 	}
@@ -101,12 +103,20 @@ func (c *VolcesArkClient) GenerateVideo(imageURL, prompt string, opts ...VideoOp
 		promptText += fmt.Sprintf("  --dur %d", options.Duration)
 	}
 
+	fmt.Printf("[VolcesARK] Final promptText (length: %d, isEmpty: %v): %q\n", len(promptText), promptText == "", promptText)
+	fmt.Printf("[VolcesARK] Prompt validation - hasVisibleChars: %v, firstChar: %q\n",
+		len(strings.TrimSpace(promptText)) > 0,
+		func() string { if len(promptText) > 0 { return string(promptText[0]) }; return "" }())
+
 	content := []VolcesArkContent{
 		{
 			Type: "text",
 			Text: promptText,
 		},
 	}
+
+	fmt.Printf("[VolcesARK] Content array built - length: %d, first item type: %s, first item text length: %d\n",
+		len(content), content[0].Type, len(content[0].Text))
 
 	// 处理不同的图片模式
 	// 1. 组图模式（多个reference_image）
