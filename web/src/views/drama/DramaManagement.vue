@@ -865,6 +865,20 @@
               </div>
             </div>
           </el-form-item>
+          <el-form-item label="剧情风格">
+            <el-input
+              v-model="editProjectForm.plot_style"
+              placeholder="例如：古装、现代、科幻等（可通过AI从剧本中提取）"
+              size="large"
+              clearable
+              maxlength="50"
+              show-word-limit
+            />
+            <div class="help-text" style="margin-top: 8px; font-size: 12px; color: #909399;">
+              <p>• 剧情风格用于描述故事的类型和背景（如：古装、现代、科幻、悬疑等）</p>
+              <p>• 可在章节工作流中使用"提取风格"功能从剧本中自动提取</p>
+            </div>
+          </el-form-item>
           <el-form-item label="短剧类型" prop="drama_mode">
             <el-select v-model="editProjectForm.drama_mode" placeholder="请选择短剧类型" size="large" style="width: 100%">
               <el-option label="VO 主导模式" value="VO主导模式" />

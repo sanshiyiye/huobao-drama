@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	models "github.com/drama-generator/backend/domain/models"
 	"github.com/drama-generator/backend/pkg/logger"
@@ -490,9 +491,31 @@ func (s *StoryboardCompositionService) DeleteScene(sceneID string) error {
 		return fmt.Errorf("failed to find scene: %w", err)
 	}
 
-	// 删除场景
-	if err := s.db.Delete(&scene).Error; err != nil {
-		return fmt.Errorf("failed to delete scene: %w", err)
+	// 在事务中执行：先清理关联分镜的 scene_id，再删除场景
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		// 清理所有关联该场景的分镜的 scene_id 字段
+		sceneIDUint, err := strconv.ParseUint(sceneID, 10, 32)
+		if err != nil {
+			return fmt.Errorf("invalid scene ID: %w", err)
+		}
+		
+		if err := tx.Model(&models.Storyboard{}).
+			Where("scene_id = ?", uint(sceneIDUint)).
+			Update("scene_id", nil).Error; err != nil {
+			return fmt.Errorf("failed to clear storyboard scene_id: %w", err)
+		}
+
+		// 删除场景
+		if err := tx.Delete(&scene).Error; err != nil {
+			return fmt.Errorf("failed to delete scene: %w", err)
+		}
+
+		s.log.Infow("Scene deleted and storyboard associations cleared", "scene_id", sceneID)
+		return nil
+	})
+
+	if err != nil {
+		return err
 	}
 
 	s.log.Infow("Scene deleted successfully", "scene_id", sceneID)

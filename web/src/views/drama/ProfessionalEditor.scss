@@ -2300,3 +2300,80 @@
   border: 1px solid var(--border-primary);
   background: var(--bg-secondary);
 }
+
+// 进度弹窗标题栏
+.batch-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  
+  .batch-progress-header-actions {
+    display: flex;
+    gap: 8px;
+  }
+}
+
+// 浮动进度指示器
+.batch-progress-floating {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 280px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  z-index: 3000;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+    transform: translateY(-2px);
+  }
+  
+  .batch-progress-floating-content {
+    padding: 16px;
+    position: relative;
+  }
+  
+  .batch-progress-floating-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 12px;
+    color: #303133;
+  }
+  
+  .batch-progress-floating-progress {
+    margin-bottom: 8px;
+  }
+  
+  .batch-progress-floating-msg {
+    font-size: 12px;
+    color: #909399;
+    line-height: 1.5;
+  }
+  
+  .batch-progress-floating-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #909399;
+    transition: all 0.2s;
+    
+    &:hover {
+      background: #f5f7fa;
+      color: #303133;
+    }
+  }
+}

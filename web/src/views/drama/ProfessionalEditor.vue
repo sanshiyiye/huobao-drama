@@ -233,12 +233,30 @@
                 <!-- 一键生图/出片/合成/章节视频进度弹窗 -->
                 <el-dialog
                   v-model="batchProgressVisible"
-                  :title="getBatchProgressTitle()"
                   width="420px"
                   class="batch-progress-dialog"
                   :close-on-click-modal="false"
-                  @close="closeBatchProgressDialog"
+                  @close="handleBatchProgressDialogClose"
                 >
+                  <!-- 自定义标题栏，添加最小化按钮 -->
+                  <template #header>
+                    <div class="batch-progress-header">
+                      <span>{{ getBatchProgressTitle() }}</span>
+                      <div class="batch-progress-header-actions">
+                        <el-button
+                          text
+                          type="primary"
+                          size="small"
+                          @click="toggleBatchProgressMinimize"
+                        >
+                          <el-icon>
+                            <component :is="batchProgressMinimized ? FullScreen : Minus" />
+                          </el-icon>
+                        </el-button>
+                      </div>
+                    </div>
+                  </template>
+
                   <div class="batch-progress-body">
                     <el-progress
                       :percentage="batchProgressPercent"
@@ -299,6 +317,30 @@
                     <el-button type="primary" @click="closeBatchProgressDialog">关闭</el-button>
                   </template>
                 </el-dialog>
+
+                <!-- 浮动进度指示器（最小化时显示） -->
+                <div
+                  v-if="batchProgressFloatingVisible && batchProgressMinimized"
+                  class="batch-progress-floating"
+                  @click="restoreBatchProgressDialog"
+                >
+                  <div class="batch-progress-floating-content">
+                    <div class="batch-progress-floating-title">
+                      <el-icon><component :is="getBatchProgressIcon()" /></el-icon>
+                      <span>{{ getBatchProgressTitle() }}</span>
+                    </div>
+                    <el-progress
+                      :percentage="batchProgressPercent"
+                      :status="batchImageProgress ? (batchImageProgress.failed > 0 ? 'warning' : 'success') : batchResult ? (batchResult.failed > 0 ? 'warning' : 'success') : undefined"
+                      :stroke-width="6"
+                      class="batch-progress-floating-progress"
+                    />
+                    <div class="batch-progress-floating-msg">{{ batchProgressMessage }}</div>
+                    <div class="batch-progress-floating-close" @click.stop="closeBatchProgressDialog">
+                      <el-icon><Close /></el-icon>
+                    </div>
+                  </div>
+                </div>
               </template>
               <el-empty v-else :description="$t('storyboard.noStoryboard')" class="empty-center-tab" />
             </div>
@@ -1854,6 +1896,8 @@ import {
   FolderAdd,
   DArrowLeft,
   DArrowRight,
+  Minus,
+  FullScreen,
 } from "@element-plus/icons-vue";
 import { dramaAPI } from "@/api/drama";
 import { propAPI } from "@/api/prop";
@@ -2003,6 +2047,8 @@ const batchShotVideoModel = ref<Record<string, string>>({});
 const oneClickVideoModel = ref<string>("");
 // 一键生图/出片进度弹窗
 const batchProgressVisible = ref(false);
+const batchProgressMinimized = ref(false); // 是否最小化
+const batchProgressFloatingVisible = ref(false); // 浮动指示器是否显示
 const batchProgressPercent = ref(0);
 const batchProgressMessage = ref("");
 const batchTaskId = ref("");
@@ -2548,6 +2594,8 @@ const startBatchProgressPolling = (taskId: string, type: "frames" | "videos") =>
   batchTaskId.value = taskId;
   batchProgressType.value = type;
   batchProgressVisible.value = true;
+  batchProgressMinimized.value = false; // 初始显示弹窗
+  batchProgressFloatingVisible.value = false;
   batchProgressPercent.value = 0;
   batchProgressMessage.value = type === "frames" ? "正在提交一键生图任务…" : "正在提交一键出片任务…";
   batchResult.value = null;
@@ -2555,12 +2603,14 @@ const startBatchProgressPolling = (taskId: string, type: "frames" | "videos") =>
   clearBatchProgressTimer();
 
   const schedule = (fn: () => void, delay: number) => {
-    if (!batchProgressVisible.value) return;
+    // 即使最小化也要继续轮询，检查是否有任务在进行
+    if (!batchTaskId.value && !batchImageProgress.value) return;
     batchProgressTimerRef = setTimeout(fn, delay);
   };
 
   const pollTask = async () => {
-    if (!batchProgressVisible.value) return;
+    // 即使最小化也要继续轮询
+    if (!batchTaskId.value) return;
     try {
       const task = await taskAPI.getStatus(taskId);
       batchProgressPercent.value = task.progress ?? 0;
@@ -2590,7 +2640,7 @@ const startBatchProgressPolling = (taskId: string, type: "frames" | "videos") =>
   };
 
   const pollImageProgress = async (epId: string, phase2StartTime: number) => {
-    if (!batchProgressVisible.value) return;
+    // 即使最小化也要继续轮询
     if (Date.now() - phase2StartTime > BATCH_IMAGE_PROGRESS_TIMEOUT_MS) {
       batchProgressMessage.value = "已超时，部分图片可能仍在生成，请稍后在「镜头图片」中查看。";
       return;
@@ -2828,6 +2878,8 @@ const handleOneClickMerge = async () => {
     batchTaskId.value = ''; // 清空之前的任务ID
     batchProgressType.value = 'merge';
     batchProgressVisible.value = true;
+    batchProgressMinimized.value = false; // 初始显示弹窗
+    batchProgressFloatingVisible.value = false;
     batchProgressPercent.value = 0;
     batchProgressMessage.value = '正在准备合成任务...';
     batchResult.value = null;
@@ -2860,12 +2912,14 @@ const handleOneClickMerge = async () => {
 // 合成进度轮询函数
 const startMergeProgressPolling = (mergeId: number) => {
   const schedule = (fn: () => void, delay: number) => {
-    if (!batchProgressVisible.value) return;
+    // 即使最小化也要继续轮询，检查是否有任务在进行
+    if (!mergeTaskId.value) return;
     batchProgressTimerRef = setTimeout(fn, delay);
   };
 
   const pollMerge = async () => {
-    if (!batchProgressVisible.value) return;
+    // 即使最小化也要继续轮询
+    if (!mergeTaskId.value) return;
     try {
       const merge = await videoMergeAPI.getMerge(mergeId);
 
@@ -2928,6 +2982,8 @@ const handleOneClickEpisodeVideo = async () => {
     batchTaskId.value = '';
     batchProgressType.value = 'episode';
     batchProgressVisible.value = true;
+    batchProgressMinimized.value = false; // 初始显示弹窗
+    batchProgressFloatingVisible.value = false;
     batchProgressPercent.value = 0;
     batchProgressMessage.value = '正在提交任务...';
     batchResult.value = null;
@@ -3006,6 +3062,8 @@ const handleRetryEpisodePhase = async (phase: 'frames' | 'videos' | 'merge') => 
     batchTaskId.value = taskId;
     batchProgressType.value = 'episode';
     batchProgressVisible.value = true;
+    batchProgressMinimized.value = false; // 初始显示弹窗
+    batchProgressFloatingVisible.value = false;
     batchProgressPercent.value = 0;
     batchProgressMessage.value = '正在提交重试任务...';
     batchResult.value = null;
@@ -3023,6 +3081,8 @@ const startEpisodeVideoProgressPolling = (taskId: string) => {
   batchTaskId.value = taskId;
   batchProgressType.value = 'episode';
   batchProgressVisible.value = true;
+  batchProgressMinimized.value = false; // 初始显示弹窗
+  batchProgressFloatingVisible.value = false;
   batchProgressPercent.value = 0;
   batchProgressMessage.value = '任务已提交，正在处理...';
   batchResult.value = null;
@@ -3030,12 +3090,14 @@ const startEpisodeVideoProgressPolling = (taskId: string) => {
   clearBatchProgressTimer();
 
   const schedule = (fn: () => void, delay: number) => {
-    if (!batchProgressVisible.value) return;
+    // 即使最小化也要继续轮询，检查是否有任务在进行
+    if (!batchTaskId.value) return;
     batchProgressTimerRef = setTimeout(fn, delay);
   };
 
   const pollTask = async () => {
-    if (!batchProgressVisible.value) return;
+    // 即使最小化也要继续轮询
+    if (!batchTaskId.value) return;
 
     try {
       const task = await taskAPI.getStatus(taskId);
@@ -3195,8 +3257,55 @@ const getBatchProgressTitle = () => {
   }
 };
 
+// 获取任务图标
+const getBatchProgressIcon = () => {
+  if (batchProgressType.value === 'frames') {
+    return Picture;
+  } else if (batchProgressType.value === 'merge') {
+    return VideoPlay;
+  } else if (batchProgressType.value === 'episode') {
+    return VideoCamera;
+  } else {
+    return VideoPlay;
+  }
+};
+
+// 切换最小化状态
+const toggleBatchProgressMinimize = () => {
+  batchProgressMinimized.value = !batchProgressMinimized.value;
+  if (batchProgressMinimized.value) {
+    // 最小化时隐藏弹窗，但保持轮询
+    batchProgressVisible.value = false;
+    batchProgressFloatingVisible.value = true;
+  } else {
+    // 恢复时显示弹窗
+    batchProgressVisible.value = true;
+    batchProgressFloatingVisible.value = false;
+  }
+};
+
+// 恢复弹窗
+const restoreBatchProgressDialog = () => {
+  batchProgressMinimized.value = false;
+  batchProgressVisible.value = true;
+  batchProgressFloatingVisible.value = false;
+};
+
+// 处理弹窗关闭事件
+const handleBatchProgressDialogClose = () => {
+  // 如果是最小化状态，只关闭浮动指示器
+  if (batchProgressMinimized.value) {
+    batchProgressFloatingVisible.value = false;
+    return;
+  }
+  // 否则完全关闭
+  closeBatchProgressDialog();
+};
+
 const closeBatchProgressDialog = () => {
   batchProgressVisible.value = false;
+  batchProgressMinimized.value = false;
+  batchProgressFloatingVisible.value = false;
   batchTaskId.value = "";
   batchResult.value = null;
   batchImageProgress.value = null;

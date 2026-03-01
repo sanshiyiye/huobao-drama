@@ -642,6 +642,8 @@
                   <template v-if="currentEpisode?.scenes?.length">
                     | {{ currentEpisode.scenes.length }}{{ $t("workflow.scenesUnit") }}
                   </template>
+                  | 剧情风格：{{ drama?.plot_style || "(空)" }}
+                  | 模式：{{ drama?.drama_mode || "(空)" }}
                 </span>
               </div>
 
@@ -2677,8 +2679,19 @@ const editShot = (shot: any, index: number) => {
 
 // 解析镜头关联的场景（用于卡片列表展示）
 const getShotScene = (shot: any) => {
-  if (shot.scene && typeof shot.scene === "object") return shot.scene;
-  if (shot.background && typeof shot.background === "object") return shot.background;
+  // 如果有预加载的场景对象，先验证它是否仍然存在于场景列表中
+  if (shot.scene && typeof shot.scene === "object") {
+    const sceneExists = currentEpisode.value?.scenes?.some(
+      (s: any) => String(s.id) === String(shot.scene.id)
+    );
+    return sceneExists ? shot.scene : null;
+  }
+  if (shot.background && typeof shot.background === "object") {
+    const sceneExists = currentEpisode.value?.scenes?.some(
+      (s: any) => String(s.id) === String(shot.background.id)
+    );
+    return sceneExists ? shot.background : null;
+  }
   if (!shot.scene_id || !currentEpisode.value?.scenes) return null;
   return currentEpisode.value.scenes.find(
     (s: any) => String(s.id) === String(shot.scene_id),
