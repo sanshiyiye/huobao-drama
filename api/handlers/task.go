@@ -55,3 +55,21 @@ func (h *TaskHandler) GetResourceTasks(c *gin.Context) {
 
 	response.Success(c, tasks)
 }
+
+// DeleteTask 删除任务
+func (h *TaskHandler) DeleteTask(c *gin.Context) {
+	taskID := c.Param("task_id")
+	
+	err := h.taskService.DeleteTask(taskID)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			response.NotFound(c, "任务不存在")
+			return
+		}
+		h.log.Errorw("Failed to delete task", "error", err, "task_id", taskID)
+		response.InternalError(c, err.Error())
+		return
+	}
+	
+	response.Success(c, gin.H{"message": "任务已删除"})
+}

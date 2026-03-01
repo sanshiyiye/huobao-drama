@@ -114,6 +114,102 @@
           <el-tab-pane :label="$t('video.batchEditing')" name="batch">
             <div class="center-tab-content batch-editing-content">
               <template v-if="storyboards.length > 0">
+                <!-- 操作按钮区域 - 顶部 -->
+                <div class="batch-actions-header">
+                  <div class="batch-actions-top">
+                    <el-button 
+                      text 
+                      type="info" 
+                      size="small"
+                      @click="showTaskHistory"
+                    >
+                      <el-icon><Clock /></el-icon>
+                      <span>查看任务历史</span>
+                    </el-button>
+                  </div>
+                  
+                  <div class="batch-actions-row">
+                    <el-button class="batch-flat-btn batch-flat-btn-lg" @click="handleOneClickAllImages">
+                      <el-icon><Picture /></el-icon>
+                      <span>{{ $t('video.oneClickAllImages') }}</span>
+                    </el-button>
+                    
+                    <div class="batch-one-click-video-wrap">
+                      <div class="batch-one-click-model-wrap">
+                        <el-select
+                          v-model="oneClickVideoModel"
+                          :placeholder="$t('video.selectVideoModel')"
+                          size="default"
+                          class="batch-one-click-model-select"
+                          filterable
+                        >
+                          <el-option
+                            v-for="m in batchVideoModelsFirstLast"
+                            :key="m.id"
+                            :label="m.name"
+                            :value="m.id"
+                          >
+                            <div class="batch-one-click-model-option">
+                              <span>{{ m.name }}</span>
+                              <span class="batch-one-click-model-tags">
+                                <template v-if="m.supportTextOnly">文生</template>
+                                <template v-if="m.supportSingleImage"> | 单图</template>
+                                <template v-if="m.supportFirstLastFrame"> | 首尾帧</template>
+                                <template v-if="m.supportAudio"> | 有声</template>
+                              </span>
+                            </div>
+                          </el-option>
+                        </el-select>
+                      </div>
+                      <el-button class="batch-flat-btn batch-flat-btn-lg" @click="handleOneClickAllVideos">
+                        <el-icon><VideoPlay /></el-icon>
+                        <span>{{ $t('video.oneClickAllVideos') }}</span>
+                      </el-button>
+                    </div>
+                    
+                    <el-button class="batch-flat-btn batch-flat-btn-lg" @click="handleOneClickMerge">
+                      <el-icon><VideoPlay /></el-icon>
+                      <span>{{ $t('video.oneClickMerge') }}</span>
+                    </el-button>
+                  </div>
+                  
+                  <div class="batch-actions-row">
+                    <div class="batch-one-click-video-wrap">
+                      <div class="batch-one-click-model-wrap">
+                        <el-select
+                          v-model="oneClickVideoModel"
+                          :placeholder="$t('video.selectVideoModel')"
+                          size="default"
+                          class="batch-one-click-model-select"
+                          filterable
+                        >
+                          <el-option
+                            v-for="m in batchVideoModelsFirstLast"
+                            :key="m.id"
+                            :label="m.name"
+                            :value="m.id"
+                          >
+                            <div class="batch-one-click-model-option">
+                              <span>{{ m.name }}</span>
+                              <span class="batch-one-click-model-tags">
+                                <template v-if="m.supportTextOnly">文生</template>
+                                <template v-if="m.supportSingleImage"> | 单图</template>
+                                <template v-if="m.supportFirstLastFrame"> | 首尾帧</template>
+                                <template v-if="m.supportAudio"> | 有声</template>
+                              </span>
+                            </div>
+                          </el-option>
+                        </el-select>
+                      </div>
+                      <el-button class="batch-flat-btn batch-flat-btn-lg" @click="handleOneClickEpisodeVideo">
+                        <el-icon><VideoCamera /></el-icon>
+                        <span>{{ $t('video.oneClickVideo') }}</span>
+                      </el-button>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- 分镜列表 - 可滚动 -->
                 <div class="batch-shot-list">
                   <div
                     v-for="shot in storyboards"
@@ -153,83 +249,6 @@
                     </div>
                   </div>
                 </div>
-                <div class="batch-one-click">
-                  <el-button class="batch-flat-btn batch-flat-btn-lg" @click="handleOneClickAllImages">
-                    <el-icon><Picture /></el-icon>
-                    <span>{{ $t('video.oneClickAllImages') }}</span>
-                  </el-button>
-                  <div class="batch-one-click-video-wrap">
-                    <div class="batch-one-click-model-wrap">
-                      <el-select
-                        v-model="oneClickVideoModel"
-                        :placeholder="$t('video.selectVideoModel')"
-                        size="default"
-                        class="batch-one-click-model-select"
-                        filterable
-                      >
-                        <el-option
-                          v-for="m in batchVideoModelsFirstLast"
-                          :key="m.id"
-                          :label="m.name"
-                          :value="m.id"
-                        >
-                          <div class="batch-one-click-model-option">
-                            <span>{{ m.name }}</span>
-                            <span class="batch-one-click-model-tags">
-                              <template v-if="m.supportTextOnly">文生</template>
-                              <template v-if="m.supportSingleImage"> | 单图</template>
-                              <template v-if="m.supportFirstLastFrame"> | 首尾帧</template>
-                              <template v-if="m.supportAudio"> | 有声</template>
-                            </span>
-                          </div>
-                        </el-option>
-                      </el-select>
-                    </div>
-                    <el-button class="batch-flat-btn batch-flat-btn-lg" @click="handleOneClickAllVideos">
-                      <el-icon><VideoPlay /></el-icon>
-                      <span>{{ $t('video.oneClickAllVideos') }}</span>
-                    </el-button>
-                  </div>
-                  <el-button class="batch-flat-btn batch-flat-btn-lg" @click="handleOneClickMerge">
-                    <el-icon><VideoPlay /></el-icon>
-                    <span>{{ $t('video.oneClickMerge') }}</span>
-                  </el-button>
-                </div>
-                <!-- 第二行：选择视频模型 + 一键视频 -->
-                <div class="batch-one-click batch-one-click-row2">
-                  <div class="batch-one-click-video-wrap">
-                    <div class="batch-one-click-model-wrap">
-                      <el-select
-                        v-model="oneClickVideoModel"
-                        :placeholder="$t('video.selectVideoModel')"
-                        size="default"
-                        class="batch-one-click-model-select"
-                        filterable
-                      >
-                        <el-option
-                          v-for="m in batchVideoModelsFirstLast"
-                          :key="m.id"
-                          :label="m.name"
-                          :value="m.id"
-                        >
-                          <div class="batch-one-click-model-option">
-                            <span>{{ m.name }}</span>
-                            <span class="batch-one-click-model-tags">
-                              <template v-if="m.supportTextOnly">文生</template>
-                              <template v-if="m.supportSingleImage"> | 单图</template>
-                              <template v-if="m.supportFirstLastFrame"> | 首尾帧</template>
-                              <template v-if="m.supportAudio"> | 有声</template>
-                            </span>
-                          </div>
-                        </el-option>
-                      </el-select>
-                    </div>
-                    <el-button class="batch-flat-btn batch-flat-btn-lg" @click="handleOneClickEpisodeVideo">
-                      <el-icon><VideoPlay /></el-icon>
-                      <span>{{ $t('video.oneClickVideo') }}</span>
-                    </el-button>
-                  </div>
-                </div>
                 <!-- 一键生图/出片/合成/章节视频进度弹窗 -->
                 <el-dialog
                   v-model="batchProgressVisible"
@@ -238,22 +257,10 @@
                   :close-on-click-modal="false"
                   @close="handleBatchProgressDialogClose"
                 >
-                  <!-- 自定义标题栏，添加最小化按钮 -->
+                  <!-- 简化标题栏 -->
                   <template #header>
                     <div class="batch-progress-header">
                       <span>{{ getBatchProgressTitle() }}</span>
-                      <div class="batch-progress-header-actions">
-                        <el-button
-                          text
-                          type="primary"
-                          size="small"
-                          @click="toggleBatchProgressMinimize"
-                        >
-                          <el-icon>
-                            <component :is="batchProgressMinimized ? FullScreen : Minus" />
-                          </el-icon>
-                        </el-button>
-                      </div>
                     </div>
                   </template>
 
@@ -276,77 +283,181 @@
                     </template>
                   </div>
                   <template #footer>
-                    <template v-if="batchProgressType === 'episode'">
+                    <!-- 任务进行中：显示取消和关闭 -->
+                    <template v-if="!batchResult && batchTaskId">
                       <el-button
-                        v-if="!batchResult"
+                        v-if="batchProgressType === 'episode'"
                         type="danger"
                         @click="handleCancelEpisodeVideoClick"
                       >
                         取消
                       </el-button>
-                      <template v-if="batchResult && batchResult.failed > 0">
-                        <el-button
-                          type="warning"
-                          @click="handleRetryEpisodePhase('frames')"
-                        >
-                          重试生图阶段
-                        </el-button>
-                        <el-button
-                          v-if="canRetryVideosPhase"
-                          type="warning"
-                          @click="handleRetryEpisodePhase('videos')"
-                        >
-                          重试出片阶段
-                        </el-button>
-                        <el-button
-                          v-if="canRetryMergePhase"
-                          type="warning"
-                          @click="handleRetryEpisodePhase('merge')"
-                        >
-                          重试合成阶段
-                        </el-button>
-                      </template>
+                      <el-button
+                        v-else-if="batchProgressType === 'frames' || batchProgressType === 'videos'"
+                        type="danger"
+                        @click="handleCancelTaskClick"
+                      >
+                        取消
+                      </el-button>
+                      <el-button @click="closeBatchProgressDialog">关闭</el-button>
                     </template>
-                    <el-button
-                      v-if="batchResult && batchResult.failed > 0 && batchProgressType === 'frames'"
-                      type="warning"
-                      @click="handleRetryFailedFrames"
-                    >
-                      重试失败分镜
-                    </el-button>
-                    <el-button type="primary" @click="closeBatchProgressDialog">关闭</el-button>
+                    
+                    <!-- 任务完成：只显示关闭 -->
+                    <template v-else>
+                      <el-button type="primary" @click="closeBatchProgressDialog">关闭</el-button>
+                    </template>
                   </template>
                 </el-dialog>
-
-                <!-- 浮动进度指示器（最小化时显示） -->
-                <div
-                  v-if="batchProgressFloatingVisible && batchProgressMinimized"
-                  class="batch-progress-floating"
-                  @click="restoreBatchProgressDialog"
-                >
-                  <div class="batch-progress-floating-content">
-                    <div class="batch-progress-floating-title">
-                      <el-icon><component :is="getBatchProgressIcon()" /></el-icon>
-                      <span>{{ getBatchProgressTitle() }}</span>
-                    </div>
-                    <el-progress
-                      :percentage="batchProgressPercent"
-                      :status="batchImageProgress ? (batchImageProgress.failed > 0 ? 'warning' : 'success') : batchResult ? (batchResult.failed > 0 ? 'warning' : 'success') : undefined"
-                      :stroke-width="6"
-                      class="batch-progress-floating-progress"
-                    />
-                    <div class="batch-progress-floating-msg">{{ batchProgressMessage }}</div>
-                    <div class="batch-progress-floating-close" @click.stop="closeBatchProgressDialog">
-                      <el-icon><Close /></el-icon>
-                    </div>
-                  </div>
-                </div>
               </template>
               <el-empty v-else :description="$t('storyboard.noStoryboard')" class="empty-center-tab" />
             </div>
           </el-tab-pane>
         </el-tabs>
       </div>
+
+      <!-- 任务历史对话框 -->
+      <el-dialog
+        v-model="taskHistoryVisible"
+        title="任务历史"
+        width="1000px"
+        class="task-history-dialog"
+        @close="stopTaskHistoryPolling"
+      >
+        <div class="task-history-content">
+          <el-table 
+            :data="taskHistory" 
+            v-loading="loadingTaskHistory" 
+            class="task-history-table"
+            style="width: 100%"
+          >
+            <el-table-column prop="type" label="任务类型" width="150">
+              <template #default="{ row }">
+                {{ getTaskTypeName(row.type) }}
+              </template>
+            </el-table-column>
+            
+            <el-table-column prop="status" label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag :type="getTaskStatusType(row.status)" size="small">
+                  {{ getTaskStatusText(row.status) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            
+            <el-table-column label="进度" width="150">
+              <template #default="{ row }">
+                <el-progress 
+                  v-if="row.status === 'pending' || row.status === 'processing'"
+                  :percentage="row.progress || 0"
+                  :status="row.status === 'failed' ? 'exception' : undefined"
+                  :stroke-width="6"
+                />
+                <span v-else>{{ row.progress }}%</span>
+              </template>
+            </el-table-column>
+            
+            <el-table-column prop="message" label="消息" min-width="200" show-overflow-tooltip />
+            
+            <el-table-column prop="error" label="错误信息" min-width="200" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span v-if="row.error" style="color: #f56c6c; font-size: 12px;">{{ row.error }}</span>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            
+            <el-table-column prop="created_at" label="创建时间" width="180">
+              <template #default="{ row }">
+                {{ formatTaskDateTime(row.created_at) }}
+              </template>
+            </el-table-column>
+            
+            <el-table-column label="操作" width="180" fixed="right">
+              <template #default="{ row }">
+                <div class="task-action-buttons">
+                  <!-- 取消按钮：只对进行中的任务显示 -->
+                  <el-tooltip 
+                    v-if="canCancelTask(row)"
+                    content="取消"
+                    placement="top"
+                    effect="dark"
+                    :popper-class="'task-action-tooltip'"
+                  >
+                    <el-button 
+                      size="small"
+                      class="task-action-icon-btn"
+                      @click="handleCancelTaskFromHistory(row)"
+                    >
+                      <el-icon><CircleClose /></el-icon>
+                    </el-button>
+                  </el-tooltip>
+                  
+                  <!-- 全部重试按钮：针对失败或取消的任务 -->
+                  <el-tooltip 
+                    v-if="canRetryTask(row) && (row.status === 'failed' || isCancelledTask(row))"
+                    content="全部重试"
+                    placement="top"
+                    effect="dark"
+                    :popper-class="'task-action-tooltip'"
+                  >
+                    <el-button 
+                      size="small"
+                      class="task-action-icon-btn"
+                      @click="handleRetryTask(row, 'retry')"
+                    >
+                      <el-icon><Refresh /></el-icon>
+                    </el-button>
+                  </el-tooltip>
+                  
+                  <!-- 继续执行按钮：针对失败或取消的任务，且有未完成部分 -->
+                  <el-tooltip 
+                    v-if="canContinueTask(row) && (row.status === 'failed' || isCancelledTask(row))"
+                    content="继续执行"
+                    placement="top"
+                    effect="dark"
+                    :popper-class="'task-action-tooltip'"
+                  >
+                    <el-button 
+                      size="small"
+                      class="task-action-icon-btn"
+                      @click="handleRetryTask(row, 'continue')"
+                    >
+                      <el-icon><RefreshRight /></el-icon>
+                    </el-button>
+                  </el-tooltip>
+                  
+                  <!-- 删除按钮：所有任务都可以删除 -->
+                  <el-tooltip 
+                    content="删除"
+                    placement="top"
+                    effect="dark"
+                    :popper-class="'task-action-tooltip'"
+                  >
+                    <el-button 
+                      size="small"
+                      class="task-action-icon-btn"
+                      @click="handleDeleteTask(row.id)"
+                    >
+                      <el-icon><Delete /></el-icon>
+                    </el-button>
+                  </el-tooltip>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+          
+          <!-- 分页 -->
+          <el-pagination
+            v-model:current-page="taskHistoryPage"
+            v-model:page-size="taskHistoryPageSize"
+            :total="taskHistoryTotal"
+            :page-sizes="[10, 20, 50, 100]"
+            layout="total, sizes, prev, pager, next, jumper"
+            class="task-history-pagination"
+            @current-change="loadTaskHistory"
+            @size-change="loadTaskHistory"
+          />
+        </div>
+      </el-dialog>
 
       <!-- 编辑区折叠按钮 -->
       <div class="edit-panel-toggle" :class="{ collapsed: !editPanelVisible }">
@@ -1894,10 +2005,10 @@ import {
   Box,
   Crop,
   FolderAdd,
-  DArrowLeft,
   DArrowRight,
-  Minus,
-  FullScreen,
+  Refresh,
+  RefreshRight,
+  CircleClose,
 } from "@element-plus/icons-vue";
 import { dramaAPI } from "@/api/drama";
 import { propAPI } from "@/api/prop";
@@ -2047,8 +2158,6 @@ const batchShotVideoModel = ref<Record<string, string>>({});
 const oneClickVideoModel = ref<string>("");
 // 一键生图/出片进度弹窗
 const batchProgressVisible = ref(false);
-const batchProgressMinimized = ref(false); // 是否最小化
-const batchProgressFloatingVisible = ref(false); // 浮动指示器是否显示
 const batchProgressPercent = ref(0);
 const batchProgressMessage = ref("");
 const batchTaskId = ref("");
@@ -2063,6 +2172,15 @@ const batchImageProgress = ref<{
 const batchProgressType = ref<"frames" | "videos" | "merge" | "episode">("frames");
 const mergeTaskId = ref<number | null>(null);
 let batchProgressTimerRef: ReturnType<typeof setTimeout> | null = null;
+
+// 任务历史相关
+const taskHistoryVisible = ref(false);
+const taskHistory = ref<any[]>([]);
+const loadingTaskHistory = ref(false);
+const taskHistoryPage = ref(1);
+const taskHistoryPageSize = ref(20);
+const taskHistoryTotal = ref(0);
+let taskHistoryPollingTimer: ReturnType<typeof setTimeout> | null = null;
 
 // 存储上一次的一键章节视频任务结果，用于重试
 const lastEpisodeVideoResult = ref<any>(null);
@@ -2594,8 +2712,6 @@ const startBatchProgressPolling = (taskId: string, type: "frames" | "videos") =>
   batchTaskId.value = taskId;
   batchProgressType.value = type;
   batchProgressVisible.value = true;
-  batchProgressMinimized.value = false; // 初始显示弹窗
-  batchProgressFloatingVisible.value = false;
   batchProgressPercent.value = 0;
   batchProgressMessage.value = type === "frames" ? "正在提交一键生图任务…" : "正在提交一键出片任务…";
   batchResult.value = null;
@@ -2615,6 +2731,22 @@ const startBatchProgressPolling = (taskId: string, type: "frames" | "videos") =>
       const task = await taskAPI.getStatus(taskId);
       batchProgressPercent.value = task.progress ?? 0;
       batchProgressMessage.value = task.message || (task.progress ? `处理中 ${task.progress}%` : "处理中…");
+      
+      // 检查是否已取消
+      if (task.status === "failed" && task.error === "用户取消") {
+        batchProgressMessage.value = "已取消";
+        batchProgressPercent.value = 0;
+        // 如果有结果，也解析并显示
+        if (task.result) {
+          try {
+            batchResult.value = typeof task.result === "string" ? JSON.parse(task.result) : task.result;
+          } catch {
+            batchResult.value = null;
+          }
+        }
+        return;
+      }
+      
       if (task.status === "completed") {
         try {
           batchResult.value = typeof task.result === "string" ? JSON.parse(task.result) : task.result;
@@ -2631,6 +2763,14 @@ const startBatchProgressPolling = (taskId: string, type: "frames" | "videos") =>
       }
       if (task.status === "failed") {
         batchProgressMessage.value = task.error || "任务失败";
+        // ⭐ 修复：失败的任务也要解析并显示结果
+        if (task.result) {
+          try {
+            batchResult.value = typeof task.result === "string" ? JSON.parse(task.result) : task.result;
+          } catch {
+            batchResult.value = null;
+          }
+        }
         return;
       }
       schedule(pollTask, POLL_INTERVAL);
@@ -2878,8 +3018,6 @@ const handleOneClickMerge = async () => {
     batchTaskId.value = ''; // 清空之前的任务ID
     batchProgressType.value = 'merge';
     batchProgressVisible.value = true;
-    batchProgressMinimized.value = false; // 初始显示弹窗
-    batchProgressFloatingVisible.value = false;
     batchProgressPercent.value = 0;
     batchProgressMessage.value = '正在准备合成任务...';
     batchResult.value = null;
@@ -2982,8 +3120,6 @@ const handleOneClickEpisodeVideo = async () => {
     batchTaskId.value = '';
     batchProgressType.value = 'episode';
     batchProgressVisible.value = true;
-    batchProgressMinimized.value = false; // 初始显示弹窗
-    batchProgressFloatingVisible.value = false;
     batchProgressPercent.value = 0;
     batchProgressMessage.value = '正在提交任务...';
     batchResult.value = null;
@@ -3042,6 +3178,109 @@ const handleCancelEpisodeVideo = async () => {
   }
 };
 
+// 取消任务（一键生图、一键出片）
+const handleCancelTaskClick = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要取消任务吗？取消后需要重新开始。',
+      '取消确认',
+      {
+        confirmButtonText: '确定取消',
+        cancelButtonText: '继续执行',
+        type: 'warning'
+      }
+    );
+    await handleCancelTask();
+  } catch {
+    // 用户点击取消，继续执行
+  }
+};
+
+const handleCancelTask = async () => {
+  if (!batchTaskId.value) {
+    return;
+  }
+  
+  // 先检查任务状态
+  try {
+    const task = await taskAPI.getStatus(batchTaskId.value);
+    
+    // 如果任务已完成，提示无需取消
+    if (task.status === 'completed') {
+      ElMessage.warning('任务已完成，无需取消');
+      closeBatchProgressDialog();
+      return;
+    }
+    
+    // ⭐ 修复：区分用户取消和真正失败的任务
+    // 如果是用户取消的任务，直接显示已取消状态，不提示"无需取消"
+    if (task.status === 'failed' && task.error === '用户取消') {
+      batchProgressMessage.value = '已取消';
+      batchProgressPercent.value = 0;
+      // 不关闭对话框，让用户可以看到已取消的状态
+      // 但也不继续执行取消操作，因为已经取消了
+      return;
+    }
+    
+    // 如果是真正失败的任务，提示无需取消
+    if (task.status === 'failed') {
+      ElMessage.warning('任务已失败，无需取消');
+      closeBatchProgressDialog();
+      return;
+    }
+  } catch (error) {
+    console.error('Failed to check task status:', error);
+  }
+  
+  try {
+    await batchAPI.cancelTask(batchTaskId.value);
+    batchProgressMessage.value = '取消请求已提交，正在停止...';
+    ElMessage.info('取消请求已提交');
+    
+    // 不要立即停止轮询，而是继续轮询检查任务状态
+    // 等待一段时间后检查任务是否已取消
+    const checkCancelled = async () => {
+      try {
+        const task = await taskAPI.getStatus(batchTaskId.value);
+        if (task.status === 'failed' && task.error === '用户取消') {
+          batchProgressMessage.value = '已取消';
+          batchProgressPercent.value = 0;
+          // 延迟一下再关闭，让用户看到"已取消"的状态
+          setTimeout(() => {
+            closeBatchProgressDialog();
+          }, 1000);
+          return true;
+        }
+        return false;
+      } catch (error) {
+        console.error('Failed to check cancellation status:', error);
+        return false;
+      }
+    };
+    
+    // 轮询检查取消状态，最多检查5次，每次间隔1秒
+    let checkCount = 0;
+    const maxChecks = 5;
+    const checkInterval = setInterval(async () => {
+      checkCount++;
+      const cancelled = await checkCancelled();
+      if (cancelled || checkCount >= maxChecks) {
+        clearInterval(checkInterval);
+        if (!cancelled) {
+          // 如果检查了5次还没确认取消，停止轮询但保持弹窗显示
+          clearBatchProgressTimer();
+          batchProgressMessage.value = '取消请求已提交，请稍后查看任务状态';
+        }
+      }
+    }, 1000);
+    
+  } catch (error: any) {
+    console.error('Cancel failed:', error);
+    const errorMsg = error?.response?.data?.message || error?.message || '取消失败';
+    ElMessage.error(`取消失败: ${errorMsg}`);
+  }
+};
+
 // 重试某个阶段
 const handleRetryEpisodePhase = async (phase: 'frames' | 'videos' | 'merge') => {
   if (!lastEpisodeVideoResult.value?.task_id) {
@@ -3062,8 +3301,6 @@ const handleRetryEpisodePhase = async (phase: 'frames' | 'videos' | 'merge') => 
     batchTaskId.value = taskId;
     batchProgressType.value = 'episode';
     batchProgressVisible.value = true;
-    batchProgressMinimized.value = false; // 初始显示弹窗
-    batchProgressFloatingVisible.value = false;
     batchProgressPercent.value = 0;
     batchProgressMessage.value = '正在提交重试任务...';
     batchResult.value = null;
@@ -3081,8 +3318,6 @@ const startEpisodeVideoProgressPolling = (taskId: string) => {
   batchTaskId.value = taskId;
   batchProgressType.value = 'episode';
   batchProgressVisible.value = true;
-  batchProgressMinimized.value = false; // 初始显示弹窗
-  batchProgressFloatingVisible.value = false;
   batchProgressPercent.value = 0;
   batchProgressMessage.value = '任务已提交，正在处理...';
   batchResult.value = null;
@@ -3258,58 +3493,732 @@ const getBatchProgressTitle = () => {
 };
 
 // 获取任务图标
-const getBatchProgressIcon = () => {
-  if (batchProgressType.value === 'frames') {
-    return Picture;
-  } else if (batchProgressType.value === 'merge') {
-    return VideoPlay;
-  } else if (batchProgressType.value === 'episode') {
-    return VideoCamera;
-  } else {
-    return VideoPlay;
-  }
-};
 
-// 切换最小化状态
-const toggleBatchProgressMinimize = () => {
-  batchProgressMinimized.value = !batchProgressMinimized.value;
-  if (batchProgressMinimized.value) {
-    // 最小化时隐藏弹窗，但保持轮询
-    batchProgressVisible.value = false;
-    batchProgressFloatingVisible.value = true;
-  } else {
-    // 恢复时显示弹窗
-    batchProgressVisible.value = true;
-    batchProgressFloatingVisible.value = false;
-  }
-};
-
-// 恢复弹窗
-const restoreBatchProgressDialog = () => {
-  batchProgressMinimized.value = false;
-  batchProgressVisible.value = true;
-  batchProgressFloatingVisible.value = false;
-};
-
-// 处理弹窗关闭事件
+// 处理弹窗关闭事件（只关闭对话框，不停止任务）
 const handleBatchProgressDialogClose = () => {
-  // 如果是最小化状态，只关闭浮动指示器
-  if (batchProgressMinimized.value) {
-    batchProgressFloatingVisible.value = false;
-    return;
-  }
-  // 否则完全关闭
   closeBatchProgressDialog();
 };
 
+// 关闭进度对话框（不停止任务，任务继续在后台执行）
 const closeBatchProgressDialog = () => {
   batchProgressVisible.value = false;
-  batchProgressMinimized.value = false;
-  batchProgressFloatingVisible.value = false;
-  batchTaskId.value = "";
-  batchResult.value = null;
-  batchImageProgress.value = null;
-  clearBatchProgressTimer();
+  // 不清理 batchTaskId，不停止轮询，任务继续执行
+  // 用户可以通过"查看任务历史"查看进度
+};
+
+// 加载任务历史（支持分页）
+const loadTaskHistory = async () => {
+  if (!episodeId.value) {
+    ElMessage.warning('请先选择剧集');
+    return;
+  }
+  
+  loadingTaskHistory.value = true;
+  
+  try {
+    const tasks = await taskAPI.getResourceTasks(episodeId.value.toString());
+    // 只显示批量任务
+    const allTasks = tasks.filter((t: any) => 
+      t.type === 'batch_generate_frames' || 
+      t.type === 'batch_generate_videos' || 
+      t.type === 'batch_retry_failed_frames' ||
+      t.type === 'batch_generate_episode_video'
+    );
+    
+    // 按创建时间倒序排列
+    allTasks.sort((a: any, b: any) => {
+      const timeA = new Date(a.created_at).getTime();
+      const timeB = new Date(b.created_at).getTime();
+      return timeB - timeA;
+    });
+    
+    // 分页处理
+    taskHistoryTotal.value = allTasks.length;
+    const start = (taskHistoryPage.value - 1) * taskHistoryPageSize.value;
+    const end = start + taskHistoryPageSize.value;
+    taskHistory.value = allTasks.slice(start, end);
+    
+    // 如果有进行中的任务，启动轮询
+    const hasActiveTasks = taskHistory.value.some((t: any) => 
+      t.status === 'pending' || t.status === 'processing'
+    );
+    if (hasActiveTasks && taskHistoryVisible.value) {
+      startTaskHistoryPolling();
+    }
+  } catch (error: any) {
+    console.error('Failed to load task history:', error);
+    ElMessage.error('加载任务历史失败: ' + (error?.message || '未知错误'));
+  } finally {
+    loadingTaskHistory.value = false;
+  }
+};
+
+// 显示任务历史
+const showTaskHistory = async () => {
+  if (!episodeId.value) {
+    ElMessage.warning('请先选择剧集');
+    return;
+  }
+  
+  taskHistoryVisible.value = true;
+  taskHistoryPage.value = 1;
+  await loadTaskHistory();
+};
+
+// 启动任务历史轮询（更新进行中的任务）
+const startTaskHistoryPolling = () => {
+  if (taskHistoryPollingTimer) {
+    clearTimeout(taskHistoryPollingTimer);
+  }
+  
+  const poll = async () => {
+    if (!taskHistoryVisible.value || !episodeId.value) {
+      return;
+    }
+    
+    try {
+      const tasks = await taskAPI.getResourceTasks(episodeId.value.toString());
+      const allTasks = tasks.filter((t: any) => 
+        t.type === 'batch_generate_frames' || 
+        t.type === 'batch_generate_videos' || 
+        t.type === 'batch_retry_failed_frames' ||
+        t.type === 'batch_generate_episode_video'
+      );
+      
+      // 按创建时间倒序排列
+      allTasks.sort((a: any, b: any) => {
+        const timeA = new Date(a.created_at).getTime();
+        const timeB = new Date(b.created_at).getTime();
+        return timeB - timeA;
+      });
+      
+      // 更新当前页的任务状态
+      const start = (taskHistoryPage.value - 1) * taskHistoryPageSize.value;
+      const end = start + taskHistoryPageSize.value;
+      const currentPageTasks = allTasks.slice(start, end);
+      
+      // 更新任务状态
+      taskHistory.value = taskHistory.value.map((task: any) => {
+        const updated = currentPageTasks.find((t: any) => t.id === task.id);
+        return updated || task;
+      });
+      
+      // 检查是否还有进行中的任务
+      const hasActiveTasks = taskHistory.value.some((t: any) => 
+        t.status === 'pending' || t.status === 'processing'
+      );
+      
+      if (hasActiveTasks) {
+        taskHistoryPollingTimer = setTimeout(poll, 3000); // 每3秒轮询一次
+      }
+    } catch (error) {
+      console.error('Failed to poll task history:', error);
+    }
+  };
+  
+  poll();
+};
+
+// 停止任务历史轮询
+const stopTaskHistoryPolling = () => {
+  if (taskHistoryPollingTimer) {
+    clearTimeout(taskHistoryPollingTimer);
+    taskHistoryPollingTimer = null;
+  }
+};
+
+// 重试任务（支持重试和继续两种模式）
+const handleRetryTask = async (task: any, mode: 'retry' | 'continue' = 'retry') => {
+  try {
+    // 首先验证任务是否仍然有效
+    const validation = await validateTaskValidity(task);
+    if (!validation.valid) {
+      ElMessage.warning(validation.message || '任务已失效，无法重试');
+      return;
+    }
+    
+    if (task.type === 'batch_generate_frames' || task.type === 'batch_retry_failed_frames') {
+      if (mode === 'continue') {
+        // 继续模式：只重试失败的分镜
+        // ⭐ 方案2：对于取消的任务，重新检查每个分镜的状态，只处理真正失败的分镜
+        if (isCancelledTask(task)) {
+          // 对于取消的任务，需要重新检查分镜状态
+          try {
+            // 获取当前剧集的所有分镜
+            const response = await dramaAPI.getStoryboards(episodeId.value.toString());
+            const storyboards = response?.storyboards || response || [];
+            const storyboardsArray = Array.isArray(storyboards) ? storyboards : [];
+            
+            if (storyboardsArray.length === 0) {
+              ElMessage.warning('当前剧集没有分镜，无法继续执行');
+              return;
+            }
+            
+            // 检查每个分镜是否已完成生图（有首帧和尾帧）
+            const storyboardIds = storyboardsArray.map((sb: any) => sb.id);
+            const failedStoryboardIds: number[] = [];
+            
+            // 批量查询每个分镜的图片生成记录
+            for (const storyboardId of storyboardIds) {
+              try {
+                const imagesResult = await imageAPI.listImages({
+                  storyboard_id: storyboardId,
+                  image_type: 'storyboard',
+                  status: 'completed',
+                  page: 1,
+                  page_size: 100
+                });
+                
+                const images = imagesResult?.items || [];
+                // 检查是否有首帧和尾帧
+                const hasFirst = images.some((img: any) => img.frame_type === 'first');
+                const hasLast = images.some((img: any) => img.frame_type === 'last');
+                
+                if (!hasFirst || !hasLast) {
+                  // 缺少首帧或尾帧，需要重新生成
+                  failedStoryboardIds.push(storyboardId);
+                }
+              } catch (e) {
+                // 查询失败，保守处理：标记为需要重新生成
+                console.warn(`Failed to check storyboard ${storyboardId} image status:`, e);
+                failedStoryboardIds.push(storyboardId);
+              }
+            }
+            
+            if (failedStoryboardIds.length === 0) {
+              ElMessage.success('所有分镜已完成生图，无需继续执行');
+              await loadTaskHistory();
+              return;
+            }
+            
+            // 提示用户将处理的分镜数量
+            ElMessage.info(`检测到 ${failedStoryboardIds.length} 个分镜需要重新生图，将开始处理`);
+            
+            await batchAPI.retryFailedFrames(
+              episodeId.value.toString(),
+              failedStoryboardIds
+            );
+            ElMessage.success(`继续执行任务已提交，将处理 ${failedStoryboardIds.length} 个分镜`);
+            await loadTaskHistory();
+            return;
+          } catch (e) {
+            console.error('Failed to recheck storyboard status:', e);
+            ElMessage.warning('无法重新检查分镜状态，建议使用"全部重试"');
+            return;
+          }
+        }
+        
+        // 对于非取消的失败任务，使用原有的逻辑
+        if (task.result && typeof task.result === 'string') {
+          try {
+            const result = JSON.parse(task.result);
+            if (result.failed_storyboard_ids && result.failed_storyboard_ids.length > 0) {
+              // 验证分镜有效性
+              const storyboardValidation = await validateStoryboards(result.failed_storyboard_ids);
+              
+              if (storyboardValidation.invalid.length > 0) {
+                // 有无效分镜，提示用户
+                try {
+                  await ElMessageBox.confirm(
+                    `<div style="text-align: left;">
+                      <p style="margin-bottom: 8px;"><strong>检测到分镜变化：</strong></p>
+                      <p style="margin-bottom: 8px; color: #f56c6c;">${storyboardValidation.message}</p>
+                      <p style="margin-top: 12px;">是否继续执行？</p>
+                      <p style="margin-top: 8px; font-size: 12px; color: #909399;">
+                        • 将继续处理 ${storyboardValidation.valid.length} 个仍然存在的分镜<br/>
+                        • 已删除的分镜将被跳过
+                      </p>
+                    </div>`,
+                    '分镜验证提示',
+                    {
+                      confirmButtonText: '继续执行',
+                      cancelButtonText: '取消',
+                      type: 'warning',
+                      dangerouslyUseHTMLString: true
+                    }
+                  );
+                } catch (e) {
+                  return;
+                }
+              }
+              
+              if (storyboardValidation.valid.length > 0) {
+                await batchAPI.retryFailedFrames(
+                  episodeId.value.toString(),
+                  storyboardValidation.valid
+                );
+                ElMessage.success(`继续执行任务已提交，将处理 ${storyboardValidation.valid.length} 个分镜`);
+              } else {
+                ElMessage.warning('所有失败的分镜都已不存在，建议使用"全部重试"重新开始');
+                return;
+              }
+              
+              await loadTaskHistory();
+              return;
+            }
+          } catch (e) {
+            // 解析失败，不能继续
+            ElMessage.warning('无法继续执行，建议使用"全部重试"');
+            return;
+          }
+        } else {
+          ElMessage.warning('无法继续执行，建议使用"全部重试"');
+          return;
+        }
+      } else {
+        // 重试模式：全部重新开始
+        await batchAPI.generateFrames(episodeId.value.toString());
+        ElMessage.success('重试任务已提交');
+        await loadTaskHistory();
+      }
+    } else if (task.type === 'batch_generate_videos') {
+      // 重试一键出片（需要模型信息，可能需要从任务结果中获取或使用默认模型）
+      ElMessage.warning('重试一键出片需要选择视频模型，请使用一键出片按钮重新执行');
+    } else if (task.type === 'batch_generate_episode_video') {
+      // 一键视频的重试逻辑
+      if (mode === 'continue') {
+        // 继续模式：从上次停止的地方继续
+        if (task.result && typeof task.result === 'string') {
+          try {
+            const result = JSON.parse(task.result);
+            // 根据已完成的部分决定从哪个阶段继续
+            if (result.completed_frames > 0 && result.completed_videos === 0) {
+              // 生图完成，从出片开始
+              if (!lastEpisodeVideoResult.value) {
+                lastEpisodeVideoResult.value = { task_id: task.id };
+              }
+              await handleRetryEpisodePhase('videos');
+            } else if (result.completed_frames > 0 && result.completed_videos > 0) {
+              // 出片完成，从合成开始
+              if (!lastEpisodeVideoResult.value) {
+                lastEpisodeVideoResult.value = { task_id: task.id };
+              }
+              await handleRetryEpisodePhase('merge');
+            } else {
+              // 没有完成的部分，从生图开始
+              if (!lastEpisodeVideoResult.value) {
+                lastEpisodeVideoResult.value = { task_id: task.id };
+              }
+              await handleRetryEpisodePhase('frames');
+            }
+          } catch (e) {
+            ElMessage.warning('无法继续执行，建议使用"全部重试"');
+          }
+        } else {
+          ElMessage.warning('无法继续执行，建议使用"全部重试"');
+        }
+      } else {
+        // 重试模式：全部重新开始
+        if (!lastEpisodeVideoResult.value) {
+          lastEpisodeVideoResult.value = { task_id: task.id };
+        }
+        await handleRetryEpisodePhase('frames');
+      }
+    }
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      console.error('Retry task failed:', error);
+      ElMessage.error('操作失败: ' + (error?.message || '未知错误'));
+    }
+  }
+};
+
+// 验证分镜是否仍然有效
+const validateStoryboards = async (storyboardIds: number[]): Promise<{
+  valid: number[]
+  invalid: number[]
+  message: string
+}> => {
+  if (!episodeId.value) {
+    return { valid: [], invalid: storyboardIds, message: '剧集ID不存在' }
+  }
+  
+  try {
+    // 获取当前剧集的所有分镜
+    const response = await dramaAPI.getStoryboards(episodeId.value.toString())
+    // API 返回格式：{ storyboards: [...], total: number }
+    const storyboards = response?.storyboards || response || []
+    const storyboardsArray = Array.isArray(storyboards) ? storyboards : []
+    const currentStoryboardIds = storyboardsArray.map((sb: any) => sb.id)
+    
+    const valid: number[] = []
+    const invalid: number[] = []
+    
+    storyboardIds.forEach(id => {
+      if (currentStoryboardIds.includes(id)) {
+        valid.push(id)
+      } else {
+        invalid.push(id)
+      }
+    })
+    
+    let message = ''
+    if (invalid.length > 0) {
+      message = `检测到 ${invalid.length} 个分镜已不存在（可能已被删除或重新划分）。`
+      if (valid.length > 0) {
+        message += `将重试 ${valid.length} 个仍然存在的分镜。`
+      } else {
+        message += '所有分镜都已不存在，建议重新执行一键生图。'
+      }
+    }
+    
+    return { valid, invalid, message }
+  } catch (error: any) {
+    console.error('Failed to validate storyboards:', error)
+    return { valid: storyboardIds, invalid: [], message: '无法验证分镜有效性，将尝试重试所有分镜' }
+  }
+}
+
+// 判断任务是否被取消
+const isCancelledTask = (task: any): boolean => {
+  // 方式1：检查错误信息
+  if (task.error === '用户取消') {
+    return true;
+  }
+  // 方式2：检查结果中的 cancelled 字段（一键视频）
+  if (task.result) {
+    try {
+      const result = typeof task.result === 'string' ? JSON.parse(task.result) : task.result;
+      if (result.current_phase === 'cancelled' || result.cancelled === true) {
+        return true;
+      }
+    } catch (e) {
+      // 解析失败，忽略
+    }
+  }
+  return false;
+};
+
+// 判断是否可以继续执行（有未完成的部分）
+const canContinueTask = (task: any): boolean => {
+  if (!canRetryTask(task)) {
+    return false;
+  }
+  
+  // ⭐ 方案2：对于取消的任务，即使没有 result 或 failed_storyboard_ids 为空，也允许继续执行
+  // 因为取消的任务可能查询分镜失败，但任务确实已经开始处理了
+  // 会在 handleRetryTask 中重新检查每个分镜的状态，只处理真正失败的分镜
+  if (isCancelledTask(task)) {
+    // 对于取消的任务，如果没有 result，允许继续（会在 validateTaskValidity 中验证）
+    if (!task.result) {
+      return true;
+    }
+    
+    // 如果有 result，检查是否有失败的分镜
+    try {
+      const result = typeof task.result === 'string' ? JSON.parse(task.result) : task.result;
+      
+      // 一键生图/出片：如果有 failed_storyboard_ids 且有值，允许继续
+      if (result.failed_storyboard_ids && result.failed_storyboard_ids.length > 0) {
+        // 检查任务保存的总数是否合理
+        if (result.total !== undefined && result.total > 0) {
+          // 检查失败分镜数量是否合理（不应该超过总数）
+          if (result.failed_storyboard_ids.length <= result.total) {
+            return true;
+          }
+        } else {
+          // 如果没有 total，但 failed_storyboard_ids 有值，允许继续
+          return true;
+        }
+      } else {
+        // ⭐ 方案2：如果 failed_storyboard_ids 为空数组，但 total 为 0，说明可能是查询失败导致的空结果
+        // 对于取消的任务，允许继续执行（会在 handleRetryTask 中重新检查分镜状态）
+        if (result.total === 0 || result.total === undefined) {
+          return true;
+        }
+        // 如果 total > 0 但 failed_storyboard_ids 为空，说明所有分镜都已完成，不需要继续
+        return false;
+      }
+    } catch (e) {
+      // 解析失败，对于取消的任务也允许继续（会在 validateTaskValidity 中验证）
+      return true;
+    }
+  }
+  
+  // 对于非取消的失败任务，检查是否有未完成的部分
+  if (task.result) {
+    try {
+      const result = typeof task.result === 'string' ? JSON.parse(task.result) : task.result;
+      
+      // 一键生图/出片：检查是否有失败的分镜
+      if (result.failed_storyboard_ids && result.failed_storyboard_ids.length > 0) {
+        // 检查任务保存的总数是否合理
+        if (result.total !== undefined && result.total > 0) {
+          // 检查失败分镜数量是否合理（不应该超过总数）
+          if (result.failed_storyboard_ids.length <= result.total) {
+            return true;
+          }
+        } else {
+          // 如果没有 total，至少检查 failed_storyboard_ids 有值
+          return true;
+        }
+      }
+      
+      // 一键视频：检查是否有未完成的阶段
+      if (result.current_phase && result.current_phase !== 'completed') {
+        // 检查是否有已完成的部分可以继续
+        if (result.completed_frames > 0 || result.completed_videos > 0) {
+          return true;
+        }
+      }
+    } catch (e) {
+      // 解析失败，不能继续
+    }
+  }
+  
+  return false;
+};
+
+// 验证任务是否仍然有效
+const validateTaskValidity = async (task: any): Promise<{
+  valid: boolean
+  message: string
+}> => {
+  // 检查剧集是否还存在
+  if (!episodeId.value) {
+    return {
+      valid: false,
+      message: '当前没有选择剧集，任务已失效'
+    };
+  }
+  
+  // 检查任务关联的资源是否还存在
+  if (task.resource_id && task.resource_id !== episodeId.value.toString()) {
+    return {
+      valid: false,
+      message: '任务关联的剧集已变更，任务已失效'
+    };
+  }
+  
+  // 对于一键生图/出片，检查分镜是否还存在
+  if (task.type === 'batch_generate_frames' || 
+      task.type === 'batch_generate_videos' || 
+      task.type === 'batch_retry_failed_frames') {
+    try {
+      const response = await dramaAPI.getStoryboards(episodeId.value.toString());
+      const storyboards = response?.storyboards || response || [];
+      const storyboardsArray = Array.isArray(storyboards) ? storyboards : [];
+      
+      if (storyboardsArray.length === 0) {
+        return {
+          valid: false,
+          message: '当前剧集没有分镜，任务已失效'
+        };
+      }
+      
+      // ⭐ 新增：检查任务保存的分镜数量是否与当前分镜数量匹配
+      if (task.result) {
+        try {
+          const result = typeof task.result === 'string' ? JSON.parse(task.result) : task.result;
+          if (result.total !== undefined && result.total !== storyboardsArray.length) {
+            return {
+              valid: false,
+              message: `检测到分镜数量已变化（任务：${result.total}个，当前：${storyboardsArray.length}个），任务已失效，建议重新执行`
+            };
+          }
+          
+          // ⭐ 新增：如果任务有 failed_storyboard_ids，检查这些分镜是否仍然存在
+          if (result.failed_storyboard_ids && result.failed_storyboard_ids.length > 0) {
+            const currentStoryboardIds = storyboardsArray.map((sb: any) => sb.id);
+            const invalidIds = result.failed_storyboard_ids.filter((id: number) => !currentStoryboardIds.includes(id));
+            
+            if (invalidIds.length === result.failed_storyboard_ids.length) {
+              // 所有失败的分镜都不存在了
+              return {
+                valid: false,
+                message: '任务关联的分镜已全部不存在，任务已失效'
+              };
+            }
+            
+            if (invalidIds.length > 0) {
+              // 部分分镜不存在，但允许继续（会在 handleRetryTask 中提示）
+              // 这里不返回 false，让 handleRetryTask 处理
+            }
+          }
+        } catch (e) {
+          // 解析失败，继续验证
+        }
+      }
+    } catch (error) {
+      return {
+        valid: false,
+        message: '无法验证任务有效性，请稍后重试'
+      };
+    }
+  }
+  
+  return {
+    valid: true,
+    message: ''
+  };
+};
+
+// 判断任务是否可以重试（包括取消的任务）
+const canRetryTask = (task: any): boolean => {
+  // 如果是字符串类型，说明是旧版本的调用方式，只检查类型
+  if (typeof task === 'string') {
+    const taskType = task;
+    return taskType === 'batch_generate_frames' || 
+           taskType === 'batch_retry_failed_frames' || 
+           taskType === 'batch_generate_videos' ||
+           taskType === 'batch_generate_episode_video';
+  }
+  
+  // 新版本：传入任务对象
+  const taskType = task.type;
+  const retryableTypes = [
+    'batch_generate_frames',
+    'batch_retry_failed_frames',
+    'batch_generate_videos',
+    'batch_generate_episode_video'
+  ];
+  
+  if (!retryableTypes.includes(taskType)) {
+    return false;
+  }
+  
+  // 检查状态：失败或取消的任务可以重试
+  if (task.status === 'failed') {
+    return true;
+  }
+  
+  // 取消的任务（状态可能是 completed，但 error 是"用户取消"）
+  if (isCancelledTask(task)) {
+    return true;
+  }
+  
+  return false;
+};
+
+// 判断任务是否可以取消
+const canCancelTask = (task: any) => {
+  // 只有进行中的任务可以取消
+  if (task.status !== 'pending' && task.status !== 'processing') {
+    return false
+  }
+  
+  // 检查任务类型是否支持取消
+  return task.type === 'batch_generate_frames' || 
+         task.type === 'batch_generate_videos' || 
+         task.type === 'batch_retry_failed_frames' ||
+         task.type === 'batch_generate_episode_video'
+}
+
+// 从任务历史取消任务
+const handleCancelTaskFromHistory = async (task: any) => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要取消这个任务吗？取消后需要重新开始。',
+      '取消确认',
+      {
+        confirmButtonText: '确定取消',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    );
+    
+    // 根据任务类型选择不同的取消API
+    if (task.type === 'batch_generate_episode_video') {
+      await batchAPI.cancelEpisodeVideo(task.id);
+    } else if (task.type === 'batch_generate_frames' || 
+               task.type === 'batch_generate_videos' || 
+               task.type === 'batch_retry_failed_frames') {
+      await batchAPI.cancelTask(task.id);
+    } else {
+      ElMessage.warning('该任务类型不支持取消');
+      return;
+    }
+    
+    ElMessage.success('取消请求已提交');
+    // 刷新任务列表以更新状态
+    await loadTaskHistory();
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      console.error('Cancel task failed:', error);
+      ElMessage.error('取消失败: ' + (error?.message || '未知错误'));
+    }
+  }
+};
+
+// 删除任务
+const handleDeleteTask = async (taskId: string) => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除这个任务记录吗？删除后无法恢复。',
+      '删除确认',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    );
+    
+    await taskAPI.deleteTask(taskId);
+    ElMessage.success('删除成功');
+    await loadTaskHistory();
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      console.error('Delete task failed:', error);
+      ElMessage.error('删除失败: ' + (error?.message || '未知错误'));
+    }
+  }
+};
+
+// 获取任务类型名称
+const getTaskTypeName = (type: string) => {
+  const typeMap: Record<string, string> = {
+    'batch_generate_frames': '一键生图',
+    'batch_generate_videos': '一键出片',
+    'batch_retry_failed_frames': '重试失败分镜',
+    'batch_generate_episode_video': '一键章节视频'
+  };
+  return typeMap[type] || type;
+};
+
+// 获取任务状态类型（用于 el-tag）
+const getTaskStatusType = (status: string) => {
+  const statusMap: Record<string, any> = {
+    'pending': 'info',
+    'processing': 'warning',
+    'completed': 'success',
+    'failed': 'danger'
+  };
+  return statusMap[status] || 'info';
+};
+
+// 获取任务状态文本
+const getTaskStatusText = (status: string) => {
+  const statusMap: Record<string, string> = {
+    'pending': '等待中',
+    'processing': '处理中',
+    'completed': '已完成',
+    'failed': '失败'
+  };
+  return statusMap[status] || status;
+};
+
+// 格式化任务日期时间
+const formatTaskDateTime = (dateStr: string) => {
+  if (!dateStr) return '-';
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  
+  if (minutes < 1) return '刚刚';
+  if (minutes < 60) return `${minutes}分钟前`;
+  if (hours < 24) return `${hours}小时前`;
+  if (days < 7) return `${days}天前`;
+  
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 };
 
 // 当前模型支持的参考图模式
@@ -4698,6 +5607,106 @@ const loadData = async () => {
 
     // 加载视频素材库
     await loadVideoAssets();
+
+    // 检查是否有进行中的任务和最近失败的任务
+    if (episodeId.value) {
+      try {
+        const tasks = await taskAPI.getResourceTasks(episodeId.value.toString());
+        // 查找进行中的批量任务（只恢复 pending 或 processing 状态的任务）
+        const activeTask = tasks.find(
+          (t: any) =>
+            (t.type === 'batch_generate_frames' || t.type === 'batch_generate_videos' || t.type === 'batch_retry_failed_frames' || t.type === 'batch_generate_episode_video') &&
+            (t.status === 'pending' || t.status === 'processing')
+        );
+
+        if (activeTask) {
+          // 恢复任务进度
+          if (activeTask.type === 'batch_generate_episode_video') {
+            // 章节视频任务使用专门的函数
+            startEpisodeVideoProgressPolling(activeTask.id);
+          } else {
+            // 一键生图/出片任务
+            let taskType: 'frames' | 'videos' = 'frames';
+            if (activeTask.type === 'batch_generate_videos') {
+              taskType = 'videos';
+            } else {
+              taskType = 'frames';
+            }
+            startBatchProgressPolling(activeTask.id, taskType);
+          }
+          ElMessage.info('检测到进行中的任务，已恢复进度显示');
+        }
+        
+        // 检查是否有最近失败的任务（最近10分钟内）
+        const recentFailedTask = tasks.find(
+          (t: any) => {
+            if (t.type !== 'batch_generate_frames' && t.type !== 'batch_generate_videos' && t.type !== 'batch_retry_failed_frames' && t.type !== 'batch_generate_episode_video') {
+              return false;
+            }
+            if (t.status !== 'failed') {
+              return false;
+            }
+            // 检查是否在最近10分钟内
+            const taskTime = new Date(t.completed_at || t.updated_at || t.created_at).getTime();
+            const now = Date.now();
+            const tenMinutesAgo = now - 10 * 60 * 1000;
+            return taskTime > tenMinutesAgo;
+          }
+        );
+        
+        if (recentFailedTask && !activeTask) {
+          // 显示提示，询问是否查看失败的任务
+          ElMessageBox.confirm(
+            `检测到最近有任务失败：${recentFailedTask.error || recentFailedTask.message || '任务失败'}，是否查看详情？`,
+            '任务失败提示',
+            {
+              confirmButtonText: '查看详情',
+              cancelButtonText: '忽略',
+              type: 'warning'
+            }
+          ).then(() => {
+            // 恢复显示失败的任务
+            let taskType: 'frames' | 'videos' | 'episode' = 'frames';
+            if (recentFailedTask.type === 'batch_generate_videos') {
+              taskType = 'videos';
+            } else if (recentFailedTask.type === 'batch_generate_episode_video') {
+              taskType = 'episode';
+            } else {
+              taskType = 'frames';
+            }
+            // 恢复任务显示（即使已失败）
+            batchTaskId.value = recentFailedTask.id;
+            batchProgressType.value = taskType;
+            batchProgressVisible.value = true;
+            batchProgressPercent.value = recentFailedTask.progress || 0;
+            batchProgressMessage.value = recentFailedTask.error || recentFailedTask.message || '任务失败';
+            
+            // 如果有结果，解析并显示
+            if (recentFailedTask.result) {
+              try {
+                batchResult.value = typeof recentFailedTask.result === 'string' 
+                  ? JSON.parse(recentFailedTask.result) 
+                  : recentFailedTask.result;
+              } catch {
+                batchResult.value = null;
+              }
+            }
+            
+            // ⭐ 关键修复：启动轮询来加载任务详情（即使任务已失败）
+            // 这样可以显示完整的任务信息，包括结果、错误详情等
+            if (taskType === 'episode') {
+              startEpisodeVideoProgressPolling(recentFailedTask.id);
+            } else {
+              startBatchProgressPolling(recentFailedTask.id, taskType);
+            }
+          }).catch(() => {
+            // 用户选择忽略
+          });
+        }
+      } catch (error) {
+        console.error('Failed to check active tasks:', error);
+      }
+    }
   } catch (error: any) {
     ElMessage.error("加载数据失败: " + (error.message || "未知错误"));
   }
@@ -5262,10 +6271,26 @@ onMounted(async () => {
 });
 
 // 组件卸载时停止轮询
+// 监听任务历史对话框的打开/关闭
+watch(taskHistoryVisible, (visible) => {
+  if (!visible) {
+    stopTaskHistoryPolling();
+  } else {
+    // 对话框打开时，如果有进行中的任务，启动轮询
+    const hasActiveTasks = taskHistory.value.some((t: any) => 
+      t.status === 'pending' || t.status === 'processing'
+    );
+    if (hasActiveTasks) {
+      startTaskHistoryPolling();
+    }
+  }
+});
+
 onBeforeUnmount(() => {
   stopPolling();
   stopVideoPolling();
   stopMergePolling();
+  stopTaskHistoryPolling();
 });
 
 // 供父组件（如 EpisodeWorkflow）在编辑镜头保存后调用，使专业制作页与编辑镜头弹窗数据同步

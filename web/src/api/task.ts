@@ -14,5 +14,15 @@ export interface AsyncTask {
 export const taskAPI = {
     getStatus(taskId: string) {
         return request.get<AsyncTask>(`/tasks/${taskId}`)
+    },
+    
+    /** 获取资源相关的所有任务 */
+    getResourceTasks(resourceId: string) {
+        return request.get<AsyncTask[]>(`/tasks?resource_id=${resourceId}`)
+    },
+    
+    /** 删除任务 */
+    deleteTask(taskId: string) {
+        return request.delete(`/tasks/${taskId}`)
     }
 }

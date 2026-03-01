@@ -154,6 +154,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 		{
 			tasks.GET("/:task_id", taskHandler.GetTaskStatus)
 			tasks.GET("", taskHandler.GetResourceTasks)
+			tasks.DELETE("/:task_id", taskHandler.DeleteTask)
 		}
 
 		// 批量操作：一键生图、一键出片
@@ -165,6 +166,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 			batch.POST("/generate-episode-video", batchHandler.BatchGenerateEpisodeVideo)
 			batch.POST("/retry-episode-video-phase", batchHandler.RetryEpisodeVideoPhase)
 			batch.POST("/cancel-episode-video", batchHandler.CancelEpisodeVideoTask)
+			batch.POST("/cancel-task", batchHandler.CancelTask)
 		}
 
 		// 场景路由

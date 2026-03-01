@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	batchFramesConcurrency  = 2
-	batchVideosConcurrency  = 2
+	batchFramesConcurrency  = 1  // 一次只处理一个分镜
+	batchVideosConcurrency  = 1  // 一次只处理一个分镜
 	framePromptPollInterval = 3 * time.Second
 	framePromptPollMaxWait  = 120 * time.Second
 )
@@ -209,12 +209,39 @@ func (s *BatchService) processRetryFailedFrames(taskID string, episodeID string,
 	var completedCount int
 	var mu sync.Mutex
 	sem := make(chan struct{}, batchFramesConcurrency)
+	cancelled := false
 
 	for _, sb := range storyboards {
+		// 检查任务是否已取消
+		task, err := s.taskService.GetTask(taskID)
+		if err == nil && task.Status == "failed" && task.Error == "用户取消" {
+			cancelled = true
+			s.log.Infow("Task cancelled, stopping retry failed frames", "task_id", taskID)
+			break
+		}
+
+		// 双重检查
+		if cancelled {
+			break
+		}
+
 		sem <- struct{}{}
 		go func(storyboard models.Storyboard) {
 			defer func() { <-sem }()
-			err := s.generateFirstLastFramesForStoryboard(dramaID, &storyboard)
+			
+			// ⭐ 关键改进：goroutine启动后立即检查任务是否已取消
+			task, err := s.taskService.GetTask(taskID)
+			if err == nil && task.Status == "failed" && task.Error == "用户取消" {
+				s.log.Infow("Task cancelled, skipping storyboard", "storyboard_id", storyboard.ID, "task_id", taskID)
+				return  // 立即返回，不执行图片生成
+			}
+			
+			// 再次检查本地取消标志
+			if cancelled {
+				return
+			}
+			
+			err = s.generateFirstLastFramesForStoryboard(dramaID, &storyboard)
 			mu.Lock()
 			if err != nil {
 				s.log.Warnw("Batch frame generation failed for storyboard", "storyboard_id", storyboard.ID, "error", err)
@@ -231,6 +258,11 @@ func (s *BatchService) processRetryFailedFrames(taskID string, episodeID string,
 	// wait all
 	for i := 0; i < batchFramesConcurrency; i++ {
 		sem <- struct{}{}
+	}
+
+	// 如果已取消，不更新最终结果
+	if cancelled {
+		return
 	}
 
 	successCount := total - len(failedIDs)
@@ -274,12 +306,34 @@ func (s *BatchService) processBatchFrames(taskID string, episodeID string) {
 	var completedCount int
 	var mu sync.Mutex
 	sem := make(chan struct{}, batchFramesConcurrency)
+	cancelled := false
 
 	for _, sb := range storyboards {
+		// 检查任务是否已取消
+		task, err := s.taskService.GetTask(taskID)
+		if err == nil && task.Status == "failed" && task.Error == "用户取消" {
+			cancelled = true
+			s.log.Infow("Task cancelled, stopping batch frames generation", "task_id", taskID)
+			break
+		}
+
 		sem <- struct{}{}
 		go func(storyboard models.Storyboard) {
 			defer func() { <-sem }()
-			err := s.generateFirstLastFramesForStoryboard(dramaID, &storyboard)
+			
+			// ⭐ 关键改进：goroutine启动后立即检查任务是否已取消
+			task, err := s.taskService.GetTask(taskID)
+			if err == nil && task.Status == "failed" && task.Error == "用户取消" {
+				s.log.Infow("Task cancelled, skipping storyboard", "storyboard_id", storyboard.ID, "task_id", taskID)
+				return  // 立即返回，不执行图片生成
+			}
+			
+			// 再次检查本地取消标志
+			if cancelled {
+				return
+			}
+			
+			err = s.generateFirstLastFramesForStoryboard(dramaID, &storyboard)
 			mu.Lock()
 			if err != nil {
 				s.log.Warnw("Batch frame generation failed for storyboard", "storyboard_id", storyboard.ID, "error", err)
@@ -289,13 +343,22 @@ func (s *BatchService) processBatchFrames(taskID string, episodeID string) {
 			progress := completedCount * 100 / total
 			msg := fmt.Sprintf("已完成 %d/%d 个分镜", completedCount, total)
 			mu.Unlock()
-			_ = s.taskService.UpdateTaskStatus(taskID, "processing", progress, msg)
+			
+			// 只有在未取消时才更新进度
+			if !cancelled {
+				_ = s.taskService.UpdateTaskStatus(taskID, "processing", progress, msg)
+			}
 		}(sb)
 	}
 
 	// wait all
 	for i := 0; i < batchFramesConcurrency; i++ {
 		sem <- struct{}{}
+	}
+
+	// 如果已取消，不更新最终结果
+	if cancelled {
+		return
 	}
 
 	successCount := total - len(failedIDs)
@@ -519,12 +582,34 @@ func (s *BatchService) processBatchVideos(taskID string, episodeID string, model
 	var completedCount int
 	var mu sync.Mutex
 	sem := make(chan struct{}, batchVideosConcurrency)
+	cancelled := false
 
 	for _, sb := range storyboards {
+		// 检查任务是否已取消
+		task, err := s.taskService.GetTask(taskID)
+		if err == nil && task.Status == "failed" && task.Error == "用户取消" {
+			cancelled = true
+			s.log.Infow("Task cancelled, stopping batch videos generation", "task_id", taskID)
+			break
+		}
+
 		sem <- struct{}{}
 		go func(storyboard models.Storyboard) {
 			defer func() { <-sem }()
-			err := s.generateVideoForStoryboard(dramaID, &storyboard, model, provider, duration)
+			
+			// ⭐ 关键改进：goroutine启动后立即检查任务是否已取消
+			task, err := s.taskService.GetTask(taskID)
+			if err == nil && task.Status == "failed" && task.Error == "用户取消" {
+				s.log.Infow("Task cancelled, skipping storyboard", "storyboard_id", storyboard.ID, "task_id", taskID)
+				return  // 立即返回，不执行视频生成
+			}
+			
+			// 再次检查本地取消标志
+			if cancelled {
+				return
+			}
+			
+			err = s.generateVideoForStoryboard(dramaID, &storyboard, model, provider, duration)
 			mu.Lock()
 			if err != nil {
 				s.log.Warnw("Batch video generation failed for storyboard", "storyboard_id", storyboard.ID, "error", err)
@@ -534,12 +619,21 @@ func (s *BatchService) processBatchVideos(taskID string, episodeID string, model
 			progress := completedCount * 100 / total
 			msg := fmt.Sprintf("已完成 %d/%d 个分镜", completedCount, total)
 			mu.Unlock()
-			_ = s.taskService.UpdateTaskStatus(taskID, "processing", progress, msg)
+			
+			// 只有在未取消时才更新进度
+			if !cancelled {
+				_ = s.taskService.UpdateTaskStatus(taskID, "processing", progress, msg)
+			}
 		}(sb)
 	}
 
 	for i := 0; i < batchVideosConcurrency; i++ {
 		sem <- struct{}{}
+	}
+
+	// 如果已取消，不更新最终结果
+	if cancelled {
+		return
 	}
 
 	successCount := total - len(failedIDs)
@@ -1173,4 +1267,168 @@ func (s *BatchService) checkEpisodeVideoCancelled(taskID string, progress *Episo
 	}
 
 	return false
+}
+
+// CancelTask 取消批量任务（一键生图、一键出片）
+func (s *BatchService) CancelTask(taskID string) error {
+	task, err := s.taskService.GetTask(taskID)
+	if err != nil {
+		s.log.Errorw("Failed to get task for cancellation", "task_id", taskID, "error", err)
+		return fmt.Errorf("任务不存在: %w", err)
+	}
+
+	// 检查任务类型
+	if task.Type != "batch_generate_frames" && task.Type != "batch_generate_videos" && task.Type != "batch_retry_failed_frames" {
+		s.log.Warnw("Attempted to cancel unsupported task type", "task_id", taskID, "task_type", task.Type)
+		return fmt.Errorf("不支持取消此类型的任务（类型: %s）", task.Type)
+	}
+
+	// 只允许取消 pending 或 processing 状态的任务
+	if task.Status != "pending" && task.Status != "processing" {
+		s.log.Warnw("Attempted to cancel task with invalid status", "task_id", taskID, "status", task.Status)
+		return fmt.Errorf("任务状态不允许取消（当前状态: %s）", task.Status)
+	}
+
+	// ⭐ 修复：保存当前进度信息，以便后续可以继续执行
+	var result interface{}
+	
+	// 如果任务已有结果，尝试解析并保留
+	if task.Result != "" {
+		var existingResult interface{}
+		if json.Unmarshal([]byte(task.Result), &existingResult) == nil {
+			result = existingResult
+		}
+	}
+	
+	// 如果没有结果，尝试从数据库查询已完成的分镜，构建结果
+	if result == nil && task.ResourceID != "" {
+		episodeID := task.ResourceID
+		
+		// 获取该剧集的所有分镜ID
+		var storyboardIDs []uint
+		if err := s.db.Model(&models.Storyboard{}).Where("episode_id = ?", episodeID).Pluck("id", &storyboardIDs).Error; err == nil && len(storyboardIDs) > 0 {
+			if task.Type == "batch_generate_frames" || task.Type == "batch_retry_failed_frames" {
+				// 查询已完成生图的分镜（有首帧和尾帧图片）
+				var completedStoryboardIDs []uint
+				if err := s.db.Model(&models.ImageGeneration{}).
+					Where("storyboard_id IN ? AND frame_type IN ? AND image_type = ? AND status = ?", 
+						storyboardIDs, []string{"first", "last"}, models.ImageTypeStoryboard, models.ImageStatusCompleted).
+					Group("storyboard_id").
+					Having("COUNT(DISTINCT frame_type) = 2"). // 既有首帧又有尾帧
+					Pluck("storyboard_id", &completedStoryboardIDs).Error; err == nil {
+					
+					// 计算失败的分镜ID（所有分镜 - 已完成的分镜）
+					failedIDs := make([]uint, 0)
+					completedMap := make(map[uint]bool)
+					for _, id := range completedStoryboardIDs {
+						completedMap[id] = true
+					}
+					for _, id := range storyboardIDs {
+						if !completedMap[id] {
+							failedIDs = append(failedIDs, id)
+						}
+					}
+					
+					result = BatchGenerateFramesResult{
+						Total:     len(storyboardIDs),
+						Success:   len(completedStoryboardIDs),
+						Failed:    len(failedIDs),
+						FailedIDs: failedIDs,
+					}
+				} else {
+					// ⭐ 方案1：查询失败，但至少保存所有分镜ID作为需要重新检查的分镜
+					// 前端继续执行时，会重新检查每个分镜的状态，只处理真正失败的分镜
+					s.log.Warnw("Failed to query completed storyboards, will recheck on continue", 
+						"task_id", taskID, 
+						"episode_id", episodeID,
+						"storyboard_count", len(storyboardIDs),
+						"error", err)
+					result = BatchGenerateFramesResult{
+						Total:     len(storyboardIDs),
+						Success:   0,  // 未知，需要重新检查
+						Failed:    len(storyboardIDs),
+						FailedIDs: storyboardIDs,  // 所有分镜都需要重新检查
+					}
+				}
+			} else if task.Type == "batch_generate_videos" {
+				// 查询已完成出片的分镜
+				var completedStoryboardIDs []uint
+				if err := s.db.Model(&models.VideoGeneration{}).
+					Where("storyboard_id IN ? AND status = ?", storyboardIDs, models.VideoStatusCompleted).
+					Pluck("storyboard_id", &completedStoryboardIDs).Error; err == nil {
+					
+					// 计算失败的分镜ID
+					failedIDs := make([]uint, 0)
+					completedMap := make(map[uint]bool)
+					for _, id := range completedStoryboardIDs {
+						completedMap[id] = true
+					}
+					for _, id := range storyboardIDs {
+						if !completedMap[id] {
+							failedIDs = append(failedIDs, id)
+						}
+					}
+					
+					result = BatchGenerateVideosResult{
+						Total:     len(storyboardIDs),
+						Success:   len(completedStoryboardIDs),
+						Failed:    len(failedIDs),
+						FailedIDs: failedIDs,
+					}
+				} else {
+					// ⭐ 方案1：查询失败，但至少保存所有分镜ID作为需要重新检查的分镜
+					// 前端继续执行时，会重新检查每个分镜的状态，只处理真正失败的分镜
+					s.log.Warnw("Failed to query completed videos, will recheck on continue", 
+						"task_id", taskID, 
+						"episode_id", episodeID,
+						"storyboard_count", len(storyboardIDs),
+						"error", err)
+					result = BatchGenerateVideosResult{
+						Total:     len(storyboardIDs),
+						Success:   0,  // 未知，需要重新检查
+						Failed:    len(storyboardIDs),
+						FailedIDs: storyboardIDs,  // 所有分镜都需要重新检查
+					}
+				}
+			}
+		}
+	}
+	
+	// 如果仍然没有结果，创建空的结果结构
+	if result == nil {
+		if task.Type == "batch_generate_frames" || task.Type == "batch_retry_failed_frames" {
+			result = BatchGenerateFramesResult{
+				Total:     0,
+				Success:   0,
+				Failed:    0,
+				FailedIDs: []uint{},
+			}
+		} else if task.Type == "batch_generate_videos" {
+			result = BatchGenerateVideosResult{
+				Total:     0,
+				Success:   0,
+				Failed:    0,
+				FailedIDs: []uint{},
+			}
+		}
+	}
+
+	// 更新任务状态为已取消，并保存结果
+	now := time.Now()
+	resultJSON, _ := json.Marshal(result)
+	if err := s.db.Model(&models.AsyncTask{}).Where("id = ?", taskID).Updates(map[string]interface{}{
+		"status":       "failed",
+		"progress":     0,
+		"message":      "已取消",
+		"error":        "用户取消",
+		"result":       string(resultJSON), // ⭐ 保存结果
+		"completed_at": &now,
+		"updated_at":   time.Now(),
+	}).Error; err != nil {
+		s.log.Errorw("Failed to update task status to cancelled", "task_id", taskID, "error", err)
+		return fmt.Errorf("更新任务状态失败: %w", err)
+	}
+
+	s.log.Infow("Task cancelled successfully", "task_id", taskID, "task_type", task.Type)
+	return nil
 }

@@ -1085,6 +1085,34 @@
           display: flex;
           flex-direction: column;
           gap: 16px;
+          height: 100%;
+          min-height: 0;
+        }
+
+        // 操作按钮区域 - 顶部
+        .batch-actions-header {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          padding: 16px;
+          background: var(--bg-card);
+          border-radius: var(--radius-md);
+          border: 1px solid var(--border-primary);
+          flex-shrink: 0;
+          
+          .batch-actions-top {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+          }
+          
+          .batch-actions-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            justify-content: center;
+          }
         }
 
         .batch-shot-list {
@@ -1093,6 +1121,7 @@
           flex-direction: column;
           gap: 8px;
           overflow-y: auto;
+          min-height: 0;
         }
 
         .batch-shot-item {
@@ -1187,6 +1216,7 @@
           font-size: 14px !important;
         }
 
+        // 保留旧的 batch-one-click 样式以兼容（如果其他地方还在使用）
         .batch-one-click {
           display: flex;
           flex-wrap: nowrap;
@@ -2307,73 +2337,129 @@
   justify-content: space-between;
   align-items: center;
   width: 100%;
+}
+
+// 任务历史对话框扁平化样式
+.task-history-dialog {
+  :deep(.el-dialog__header) {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-primary);
+  }
   
-  .batch-progress-header-actions {
-    display: flex;
-    gap: 8px;
+  :deep(.el-dialog__body) {
+    padding: 0;
   }
 }
 
-// 浮动进度指示器
-.batch-progress-floating {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  width: 280px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  cursor: pointer;
-  z-index: 3000;
-  transition: all 0.3s ease;
-  
-  &:hover {
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
-    transform: translateY(-2px);
+.task-history-content {
+  .task-history-table {
+    :deep(.el-table__header) {
+      th {
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+        font-weight: 500;
+        border-bottom: 1px solid var(--border-primary);
+      }
+    }
+    
+    :deep(.el-table__row) {
+      &:hover {
+        background: var(--bg-card-hover);
+      }
+    }
   }
   
-  .batch-progress-floating-content {
-    padding: 16px;
-    position: relative;
+  .flat-action-btn {
+    background: transparent !important;
+    border: none !important;
+    padding: 4px 8px !important;
+    font-size: 12px !important;
+    
+    &:hover {
+      background: var(--bg-card-hover) !important;
+    }
   }
   
-  .batch-progress-floating-title {
+  .task-action-buttons {
     display: flex;
-    align-items: center;
     gap: 8px;
-    font-size: 14px;
-    font-weight: 500;
-    margin-bottom: 12px;
-    color: #303133;
-  }
-  
-  .batch-progress-floating-progress {
-    margin-bottom: 8px;
-  }
-  
-  .batch-progress-floating-msg {
-    font-size: 12px;
-    color: #909399;
-    line-height: 1.5;
-  }
-  
-  .batch-progress-floating-close {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 24px;
-    height: 24px;
-    display: flex;
     align-items: center;
-    justify-content: center;
-    border-radius: 4px;
-    cursor: pointer;
-    color: #909399;
+    justify-content: flex-end;
+  }
+  
+  .task-action-icon-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 6px;
+    background: var(--bg-secondary) !important;
+    border: 1px solid var(--border-primary) !important;
+    color: var(--text-primary) !important;
     transition: all 0.2s;
     
     &:hover {
-      background: #f5f7fa;
-      color: #303133;
+      background: var(--bg-card-hover) !important;
+      border-color: var(--border-hover) !important;
+      transform: translateY(-1px);
+    }
+    
+    &:active {
+      transform: translateY(0);
+    }
+    
+    .el-icon {
+      font-size: 16px;
+    }
+  }
+  
+  .task-history-pagination {
+    padding: 16px;
+    display: flex;
+    justify-content: center;
+    border-top: 1px solid var(--border-primary);
+    
+    :deep(.el-pagination__total),
+    :deep(.el-pagination__jump) {
+      color: var(--text-secondary);
+    }
+    
+    :deep(.btn-prev),
+    :deep(.btn-next),
+    :deep(.number) {
+      background: var(--bg-card) !important;
+      border: 1px solid var(--border-primary) !important;
+      color: var(--text-primary) !important;
+      
+      &:hover {
+        background: var(--bg-card-hover) !important;
+        border-color: var(--border-secondary) !important;
+      }
+      
+      &.is-active {
+        background: var(--accent) !important;
+        border-color: var(--accent) !important;
+        color: #fff !important;
+      }
+    }
+  }
+}
+
+// Tooltip 样式增强，确保在任何背景下都清晰可见
+// 使用深度选择器来覆盖 Element Plus 的 tooltip 样式
+:deep(.task-action-tooltip) {
+  background: rgba(0, 0, 0, 0.9) !important;
+  color: #ffffff !important;
+  border: none !important;
+  padding: 8px 12px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+  backdrop-filter: blur(8px) !important;
+  
+  .el-tooltip__arrow {
+    &::before {
+      background: rgba(0, 0, 0, 0.9) !important;
+      border: none !important;
     }
   }
 }

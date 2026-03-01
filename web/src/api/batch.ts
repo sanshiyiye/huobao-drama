@@ -70,4 +70,9 @@ export const batchAPI = {
   cancelEpisodeVideo(taskId: string) {
     return request.post<{ message: string }>('/batch/cancel-episode-video', { task_id: taskId })
   },
+
+  /** 取消批量任务（一键生图、一键出片） */
+  cancelTask(taskId: string) {
+    return request.post<{ message: string }>('/batch/cancel-task', { task_id: taskId })
+  },
 }

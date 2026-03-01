@@ -111,3 +111,15 @@ func (s *TaskService) GetTasksByResource(resourceID string) ([]*models.AsyncTask
 	}
 	return tasks, nil
 }
+
+// DeleteTask 删除任务
+func (s *TaskService) DeleteTask(taskID string) error {
+	result := s.db.Where("id = ?", taskID).Delete(&models.AsyncTask{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}

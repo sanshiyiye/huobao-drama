@@ -186,3 +186,28 @@ func (h *BatchHandler) CancelEpisodeVideoTask(c *gin.Context) {
 
 	response.Success(c, gin.H{"message": "任务已取消"})
 }
+
+// CancelTaskRequest 取消任务请求
+type CancelTaskRequest struct {
+	TaskID string `json:"task_id" binding:"required"`
+}
+
+// CancelTask 取消批量任务（一键生图、一键出片）
+func (h *BatchHandler) CancelTask(c *gin.Context) {
+	var req CancelTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "缺少 task_id")
+		return
+	}
+
+	err := h.batchService.CancelTask(req.TaskID)
+	if err != nil {
+		h.log.Errorw("Cancel task failed",
+			"error", err,
+			"task_id", req.TaskID)
+		response.InternalError(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{"message": "取消请求已提交"})
+}
