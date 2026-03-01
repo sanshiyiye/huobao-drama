@@ -90,6 +90,27 @@ func (h *BatchHandler) BatchRetryFailedFrames(c *gin.Context) {
 	response.Success(c, gin.H{"task_id": taskID})
 }
 
+// ResumeBatchFramesTask 恢复一键生图任务（继续执行失败的分镜）
+func (h *BatchHandler) ResumeBatchFramesTask(c *gin.Context) {
+	var req ResumeBatchFramesTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "缺少必要参数")
+		return
+	}
+
+	taskID, err := h.batchService.ResumeBatchFramesTask(req.TaskID, req.FailedStoryboardIDs)
+	if err != nil {
+		h.log.Errorw("Resume batch frames task failed",
+			"error", err,
+			"task_id", req.TaskID,
+			"failed_storyboard_ids", req.FailedStoryboardIDs)
+		response.InternalError(c, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{"task_id": taskID})
+}
+
 // GetBatchImageProgress 剧集首尾帧生图进度（只读），供前端轮询真实进度
 func (h *BatchHandler) GetBatchImageProgress(c *gin.Context) {
 	episodeID := c.Param("episode_id")
@@ -115,10 +136,17 @@ type BatchGenerateEpisodeVideoRequest struct {
 	Model     string `json:"model"`
 }
 
+// ResumeBatchFramesTaskRequest 恢复一键生图任务请求
+type ResumeBatchFramesTaskRequest struct {
+	TaskID             string   `json:"task_id" binding:"required"`
+	FailedStoryboardIDs []uint   `json:"failed_storyboard_ids" binding:"required"`
+}
+
 // RetryEpisodeVideoPhaseRequest 重试阶段请求
 type RetryEpisodeVideoPhaseRequest struct {
-	TaskID string `json:"task_id" binding:"required"`
-	Phase  string `json:"phase" binding:"required"` // frames, videos, merge
+	TaskID        string `json:"task_id" binding:"required"`
+	Phase         string `json:"phase" binding:"required"` // frames, videos, merge
+	ResetProgress bool   `json:"reset_progress"`           // true: 全部重试（重置进度），false: 继续执行（从失败处继续）
 }
 
 // CancelEpisodeVideoTaskRequest 取消任务请求
@@ -154,12 +182,13 @@ func (h *BatchHandler) RetryEpisodeVideoPhase(c *gin.Context) {
 		return
 	}
 
-	taskID, err := h.batchService.RetryEpisodeVideoPhase(req.TaskID, req.Phase)
+	taskID, err := h.batchService.RetryEpisodeVideoPhase(req.TaskID, req.Phase, req.ResetProgress)
 	if err != nil {
 		h.log.Errorw("Retry episode video phase failed",
 			"error", err,
 			"task_id", req.TaskID,
-			"phase", req.Phase)
+			"phase", req.Phase,
+			"reset_progress", req.ResetProgress)
 		response.InternalError(c, err.Error())
 		return
 	}

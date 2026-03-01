@@ -168,7 +168,7 @@ func (s *BatchService) BatchGenerateFrames(episodeID string) (string, error) {
 	return task.ID, nil
 }
 
-// BatchRetryFailedFrames 重试失败分镜的首尾帧生成
+// BatchRetryFailedFrames 重试失败分镜的首尾帧生成（创建新任务）
 func (s *BatchService) BatchRetryFailedFrames(episodeID string, failedStoryboardIDs []uint) (string, error) {
 	task, err := s.taskService.CreateTask("batch_retry_failed_frames", episodeID)
 	if err != nil {
@@ -177,6 +177,51 @@ func (s *BatchService) BatchRetryFailedFrames(episodeID string, failedStoryboard
 	go s.processRetryFailedFrames(task.ID, episodeID, failedStoryboardIDs)
 	s.log.Infow("Batch retry failed frames task created", "task_id", task.ID, "episode_id", episodeID, "failed_storyboard_ids", failedStoryboardIDs)
 	return task.ID, nil
+}
+
+// ResumeBatchFramesTask 恢复一键生图任务（继续执行失败的分镜）
+func (s *BatchService) ResumeBatchFramesTask(taskID string, failedStoryboardIDs []uint) (string, error) {
+	oldTask, err := s.taskService.GetTask(taskID)
+	if err != nil {
+		return "", fmt.Errorf("原任务不存在")
+	}
+
+	var result BatchGenerateFramesResult
+	if oldTask.Result != "" {
+		json.Unmarshal([]byte(oldTask.Result), &result)
+	}
+
+	episodeID := oldTask.ResourceID
+	
+	// ⭐ 改进：恢复原任务状态，而不是创建新任务
+	// 计算当前进度（基于已完成的分镜数）
+	currentProgress := 0
+	progressMessage := "正在继续执行..."
+	
+	if result.Total > 0 {
+		// 已完成的分镜数 = 总数 - 失败的分镜数
+		completedCount := result.Total - len(failedStoryboardIDs)
+		if completedCount < 0 {
+			completedCount = 0
+		}
+		currentProgress = (completedCount * 100) / result.Total
+		progressMessage = fmt.Sprintf("继续处理 %d 个失败分镜...", len(failedStoryboardIDs))
+	} else {
+		// 如果没有总数信息，根据失败分镜数量估算
+		// 假设至少有失败的分镜需要处理
+		progressMessage = fmt.Sprintf("继续处理 %d 个分镜...", len(failedStoryboardIDs))
+	}
+	
+	// 恢复原任务状态
+	if err := s.taskService.ResumeTask(taskID, currentProgress, progressMessage); err != nil {
+		return "", fmt.Errorf("恢复任务失败: %w", err)
+	}
+
+	// 使用原任务ID继续执行
+	go s.processRetryFailedFrames(taskID, episodeID, failedStoryboardIDs)
+
+	// ⭐ 改进：返回原任务ID，而不是新任务ID
+	return taskID, nil
 }
 
 func (s *BatchService) processRetryFailedFrames(taskID string, episodeID string, failedStoryboardIDs []uint) {
@@ -374,6 +419,92 @@ func (s *BatchService) processBatchFrames(taskID string, episodeID string) {
 
 // generateFirstLastFramesForStoryboard 为单个分镜生成首帧和尾帧图片
 func (s *BatchService) generateFirstLastFramesForStoryboard(dramaID string, sb *models.Storyboard) error {
+	// ⭐ 改进1：检查是否已有 completed 状态的记录，如果有则跳过
+	var existingFirstImg, existingLastImg models.ImageGeneration
+	hasFirst := s.db.Where("storyboard_id = ? AND frame_type = ? AND status = ?", 
+		sb.ID, "first", models.ImageStatusCompleted).
+		Order("created_at DESC").
+		First(&existingFirstImg).Error == nil
+	hasLast := s.db.Where("storyboard_id = ? AND frame_type = ? AND status = ?", 
+		sb.ID, "last", models.ImageStatusCompleted).
+		Order("created_at DESC").
+		First(&existingLastImg).Error == nil
+	
+	// 如果首帧和尾帧都已存在，直接返回
+	if hasFirst && hasLast {
+		s.log.Infow("Storyboard already has completed first and last frames, skipping", 
+			"storyboard_id", sb.ID,
+			"first_img_id", existingFirstImg.ID,
+			"last_img_id", existingLastImg.ID)
+		return nil
+	}
+	
+	// ⭐ 改进2：取消进行中的请求（processing 或 pending 状态）
+	// 取消首帧的进行中请求
+	var inProgressFirst []models.ImageGeneration
+	if err := s.db.Where("storyboard_id = ? AND frame_type = ? AND status IN ?", 
+		sb.ID, "first", []models.ImageGenerationStatus{models.ImageStatusProcessing, models.ImageStatusPending}).
+		Find(&inProgressFirst).Error; err == nil {
+		for _, img := range inProgressFirst {
+			cancelMsg := "用户取消（重新生成）"
+			s.db.Model(&img).Updates(map[string]interface{}{
+				"status":    models.ImageStatusFailed,
+				"error_msg": &cancelMsg,
+			})
+			s.log.Infow("Cancelled in-progress first frame generation", 
+				"image_gen_id", img.ID, 
+				"storyboard_id", sb.ID)
+		}
+	}
+	
+	// 取消尾帧的进行中请求
+	var inProgressLast []models.ImageGeneration
+	if err := s.db.Where("storyboard_id = ? AND frame_type = ? AND status IN ?", 
+		sb.ID, "last", []models.ImageGenerationStatus{models.ImageStatusProcessing, models.ImageStatusPending}).
+		Find(&inProgressLast).Error; err == nil {
+		for _, img := range inProgressLast {
+			cancelMsg := "用户取消（重新生成）"
+			s.db.Model(&img).Updates(map[string]interface{}{
+				"status":    models.ImageStatusFailed,
+				"error_msg": &cancelMsg,
+			})
+			s.log.Infow("Cancelled in-progress last frame generation", 
+				"image_gen_id", img.ID, 
+				"storyboard_id", sb.ID)
+		}
+	}
+	
+	// ⭐ 改进3：可选地清理旧的失败记录（只保留最近的一条失败记录）
+	// 清理首帧的旧失败记录
+	var failedFirst []models.ImageGeneration
+	if err := s.db.Where("storyboard_id = ? AND frame_type = ? AND status = ?", 
+		sb.ID, "first", models.ImageStatusFailed).
+		Order("created_at DESC").
+		Find(&failedFirst).Error; err == nil && len(failedFirst) > 1 {
+		// 保留最新的一条，删除其他的
+		for i := 1; i < len(failedFirst); i++ {
+			s.db.Delete(&failedFirst[i])
+			s.log.Infow("Deleted old failed first frame record", 
+				"image_gen_id", failedFirst[i].ID, 
+				"storyboard_id", sb.ID)
+		}
+	}
+	
+	// 清理尾帧的旧失败记录
+	var failedLast []models.ImageGeneration
+	if err := s.db.Where("storyboard_id = ? AND frame_type = ? AND status = ?", 
+		sb.ID, "last", models.ImageStatusFailed).
+		Order("created_at DESC").
+		Find(&failedLast).Error; err == nil && len(failedLast) > 1 {
+		// 保留最新的一条，删除其他的
+		for i := 1; i < len(failedLast); i++ {
+			s.db.Delete(&failedLast[i])
+			s.log.Infow("Deleted old failed last frame record", 
+				"image_gen_id", failedLast[i].ID, 
+				"storyboard_id", sb.ID)
+		}
+	}
+	
 	firstPrompt, lastPrompt, err := s.getOrGenerateFramePrompts(sb)
 	if err != nil {
 		return err
@@ -399,22 +530,26 @@ func (s *BatchService) generateFirstLastFramesForStoryboard(dramaID string, sb *
 		ReferenceImages: refs,
 	}
 
-	// 生成首帧图片并等待完成
-	firstImgGen, err := s.imageGenService.GenerateImage(reqFirst)
-	if err != nil {
-		return fmt.Errorf("首帧: %w", err)
-	}
-	if err := s.waitForImageGenerationComplete(firstImgGen.ID); err != nil {
-		return fmt.Errorf("首帧生成失败: %w", err)
+	// 生成首帧图片并等待完成（如果还没有）
+	if !hasFirst {
+		firstImgGen, err := s.imageGenService.GenerateImage(reqFirst)
+		if err != nil {
+			return fmt.Errorf("首帧: %w", err)
+		}
+		if err := s.waitForImageGenerationComplete(firstImgGen.ID); err != nil {
+			return fmt.Errorf("首帧生成失败: %w", err)
+		}
 	}
 
-	// 生成尾帧图片并等待完成
-	lastImgGen, err := s.imageGenService.GenerateImage(reqLast)
-	if err != nil {
-		return fmt.Errorf("尾帧: %w", err)
-	}
-	if err := s.waitForImageGenerationComplete(lastImgGen.ID); err != nil {
-		return fmt.Errorf("尾帧生成失败: %w", err)
+	// 生成尾帧图片并等待完成（如果还没有）
+	if !hasLast {
+		lastImgGen, err := s.imageGenService.GenerateImage(reqLast)
+		if err != nil {
+			return fmt.Errorf("尾帧: %w", err)
+		}
+		if err := s.waitForImageGenerationComplete(lastImgGen.ID); err != nil {
+			return fmt.Errorf("尾帧生成失败: %w", err)
+		}
 	}
 
 	return nil
@@ -609,6 +744,32 @@ func (s *BatchService) processBatchVideos(taskID string, episodeID string, model
 				return
 			}
 			
+			// ⭐ 改进：检查是否已有正在处理的视频生成任务
+			if existingVideoGen, exists := s.hasProcessingVideoGeneration(storyboard.ID); exists {
+				s.log.Infow("Found existing video generation, waiting", 
+					"storyboard_id", storyboard.ID, 
+					"video_gen_id", existingVideoGen.ID,
+					"task_id", existingVideoGen.TaskID)
+				
+				if err := s.waitForVideoGeneration(existingVideoGen.ID); err == nil {
+					// 任务完成
+					mu.Lock()
+					completedCount++
+					progress := completedCount * 100 / total
+					msg := fmt.Sprintf("已完成 %d/%d 个分镜", completedCount, total)
+					mu.Unlock()
+					
+					if !cancelled {
+						_ = s.taskService.UpdateTaskStatus(taskID, "processing", progress, msg)
+					}
+					return
+				}
+				// 任务失败，继续执行下面的逻辑
+				s.log.Warnw("Existing video generation task failed, will create new one", 
+					"storyboard_id", storyboard.ID, 
+					"video_gen_id", existingVideoGen.ID)
+			}
+			
 			err = s.generateVideoForStoryboard(dramaID, &storyboard, model, provider, duration)
 			mu.Lock()
 			if err != nil {
@@ -660,7 +821,83 @@ func extractProviderFromModelName(model string) string {
 	return "doubao"
 }
 
+// hasProcessingVideoGeneration 检查是否有正在处理的视频生成任务
+// 判断条件：
+// 1. 状态是 processing（说明已经提交到API了）
+// 2. 有 task_id 且不为空（说明API已经返回了任务ID）
+// 3. 创建时间在最近1小时内（避免处理过期的任务）
+func (s *BatchService) hasProcessingVideoGeneration(storyboardID uint) (*models.VideoGeneration, bool) {
+	var videoGen models.VideoGeneration
+	
+	oneHourAgo := time.Now().Add(-1 * time.Hour)
+	
+	err := s.db.Where("storyboard_id = ? AND status = ? AND task_id IS NOT NULL AND task_id != '' AND created_at > ?", 
+		storyboardID, 
+		models.VideoStatusProcessing,
+		oneHourAgo).
+		Order("created_at DESC").
+		First(&videoGen).Error
+	
+	if err == nil {
+		return &videoGen, true
+	}
+	
+	return nil, false
+}
+
+// waitForVideoGeneration 等待视频生成完成（与后台 goroutine 超时时间对齐）
+// 超时时间：50分钟（与 pollTaskStatus 的超时时间一致）
+func (s *BatchService) waitForVideoGeneration(videoGenID uint) error {
+	const maxWaitTime = 50 * time.Minute  // 与 pollTaskStatus 的超时时间一致
+	const pollInterval = 5 * time.Second
+	deadline := time.Now().Add(maxWaitTime)
+	
+	for time.Now().Before(deadline) {
+		var videoGen models.VideoGeneration
+		if err := s.db.First(&videoGen, videoGenID).Error; err != nil {
+			return err
+		}
+		
+		if videoGen.Status == models.VideoStatusCompleted {
+			return nil
+		}
+		
+		if videoGen.Status == models.VideoStatusFailed {
+			errorMsg := "视频生成失败"
+			if videoGen.ErrorMsg != nil {
+				errorMsg = fmt.Sprintf("视频生成失败: %s", *videoGen.ErrorMsg)
+			}
+			return fmt.Errorf(errorMsg)
+		}
+		
+		// 如果状态仍然是 processing，继续等待
+		time.Sleep(pollInterval)
+	}
+	
+	return fmt.Errorf("视频生成超时（等待了 %d 分钟）", int(maxWaitTime.Minutes()))
+}
+
 func (s *BatchService) generateVideoForStoryboard(dramaID string, sb *models.Storyboard, model, provider string, duration int) error {
+	// ⭐ 改进：检查是否已有正在处理的任务
+	if existingVideoGen, exists := s.hasProcessingVideoGeneration(sb.ID); exists {
+		s.log.Infow("Found existing video generation task, waiting for completion", 
+			"storyboard_id", sb.ID, 
+			"video_gen_id", existingVideoGen.ID,
+			"task_id", existingVideoGen.TaskID,
+			"created_at", existingVideoGen.CreatedAt)
+		
+		// 等待现有任务完成
+		if err := s.waitForVideoGeneration(existingVideoGen.ID); err == nil {
+			return nil  // 任务已完成
+		} else {
+			// 任务失败或超时，继续执行下面的逻辑创建新任务
+			s.log.Warnw("Existing video generation task failed or timed out, will create new one", 
+				"storyboard_id", sb.ID, 
+				"video_gen_id", existingVideoGen.ID,
+				"error", err)
+		}
+	}
+	
 	var firstImg, lastImg models.ImageGeneration
 	if err := s.db.Where("storyboard_id = ? AND frame_type = ? AND status = ?", sb.ID, "first", models.ImageStatusCompleted).
 		Order("created_at DESC").First(&firstImg).Error; err != nil {
@@ -711,8 +948,8 @@ func (s *BatchService) generateVideoForStoryboard(dramaID string, sb *models.Sto
 		return err
 	}
 
-	// 等待视频生成完成
-	const maxWaitTime = 5 * time.Minute
+	// ⭐ 改进：等待时间与后台 goroutine 的超时时间对齐（50分钟）
+	const maxWaitTime = 50 * time.Minute  // 与 pollTaskStatus 的超时时间一致
 	const pollInterval = 5 * time.Second
 	deadline := time.Now().Add(maxWaitTime)
 
@@ -727,13 +964,17 @@ func (s *BatchService) generateVideoForStoryboard(dramaID string, sb *models.Sto
 		}
 
 		if currentVideoGen.Status == models.VideoStatusFailed {
-			return fmt.Errorf("视频生成失败")
+			errorMsg := "视频生成失败"
+			if currentVideoGen.ErrorMsg != nil {
+				errorMsg = fmt.Sprintf("视频生成失败: %s", *currentVideoGen.ErrorMsg)
+			}
+			return fmt.Errorf(errorMsg)
 		}
 
 		time.Sleep(pollInterval)
 	}
 
-	return fmt.Errorf("视频生成超时")
+	return fmt.Errorf("视频生成超时（等待了 %d 分钟）", int(maxWaitTime.Minutes()))
 }
 
 // BatchGenerateEpisodeVideo 创建一键章节视频任务（生图→出片→合成）
@@ -753,8 +994,9 @@ func (s *BatchService) BatchGenerateEpisodeVideo(episodeID string, model string,
 	return task.ID, nil
 }
 
-// RetryEpisodeVideoPhase 重试一键章节视频的某个阶段（仅重试失败的分镜）
-func (s *BatchService) RetryEpisodeVideoPhase(taskID string, phase string) (string, error) {
+// RetryEpisodeVideoPhase 重试一键章节视频的某个阶段
+// resetProgress: true 表示全部重试（重置进度），false 表示继续执行（从失败处继续）
+func (s *BatchService) RetryEpisodeVideoPhase(taskID string, phase string, resetProgress bool) (string, error) {
 	oldTask, err := s.taskService.GetTask(taskID)
 	if err != nil {
 		return "", fmt.Errorf("原任务不存在")
@@ -766,22 +1008,80 @@ func (s *BatchService) RetryEpisodeVideoPhase(taskID string, phase string) (stri
 	}
 
 	episodeID := oldTask.ResourceID
-	newTask, err := s.taskService.CreateTask("batch_generate_episode_video", episodeID)
-	if err != nil {
-		return "", fmt.Errorf("创建任务失败: %w", err)
+	
+	// ⭐ 改进：恢复原任务状态，而不是创建新任务
+	currentProgress := 0
+	progressMessage := "正在继续执行..."
+	
+	if resetProgress {
+		// 全部重试：重置进度为0，重置已完成的分镜数
+		currentProgress = 0
+		progress.CompletedFrames = 0
+		progress.CompletedVideos = 0
+		progress.FailedStoryboards = []int{}
+		progress.Phase = "frames"
+		progressMessage = "阶段1/3：重新开始生图..."
+	} else {
+		// 继续执行：基于已完成的部分计算进度
+		if phase == "frames" {
+			if progress.CompletedFrames > 0 && progress.TotalStoryboards > 0 {
+				// 阶段1：已完成的分镜数 / 总分镜数 * 33%
+				// 使用浮点数计算后再取整，确保精度
+				currentProgress = int(float64(progress.CompletedFrames) * 33.0 / float64(progress.TotalStoryboards))
+			}
+			progressMessage = "阶段1/3：继续生图..."
+		} else if phase == "videos" {
+			if progress.CompletedVideos > 0 && progress.TotalStoryboards > 0 {
+				// 阶段2：33% + (已完成的分镜数 / 总分镜数 * 33%)
+				// 使用浮点数计算后再取整，确保精度
+				currentProgress = 33 + int(float64(progress.CompletedVideos) * 33.0 / float64(progress.TotalStoryboards))
+			} else if progress.CompletedFrames > 0 && progress.TotalStoryboards > 0 {
+				// 阶段1已完成，但阶段2还没开始，从33%开始
+				currentProgress = 33
+			} else {
+				currentProgress = 33  // 阶段1已完成（即使没有 CompletedFrames 信息）
+			}
+			progressMessage = "阶段2/3：继续出片..."
+		} else if phase == "merge" {
+			// 阶段3：如果阶段2已完成，从66%开始；否则根据已完成的分镜数计算
+			if progress.CompletedVideos > 0 && progress.TotalStoryboards > 0 {
+				// 检查是否所有分镜都已完成出片
+				if progress.CompletedVideos >= progress.TotalStoryboards {
+					currentProgress = 66  // 阶段1和2已完成
+				} else {
+					// 阶段2未完全完成，计算当前进度
+					currentProgress = 33 + int(float64(progress.CompletedVideos) * 33.0 / float64(progress.TotalStoryboards))
+				}
+			} else {
+				currentProgress = 66  // 假设阶段1和2已完成
+			}
+			progressMessage = "阶段3/3：继续合成..."
+		}
+	}
+	
+	// 恢复原任务状态
+	if err := s.taskService.ResumeTask(taskID, currentProgress, progressMessage); err != nil {
+		return "", fmt.Errorf("恢复任务失败: %w", err)
 	}
 
 	go func() {
-		if phase == "frames" {
-			s.processEpisodeVideo(newTask.ID, episodeID, "", "")
+		if resetProgress || phase == "frames" {
+			// 全部重试：从头开始
+			// 继续执行阶段1：从失败分镜开始
+			if !resetProgress && (progress.CompletedFrames > 0 || len(progress.FailedStoryboards) > 0) {
+				s.processEpisodeVideoFromFrames(taskID, episodeID, "", "", &progress)
+			} else {
+				s.processEpisodeVideo(taskID, episodeID, "", "")
+			}
 		} else if phase == "videos" {
-			s.processEpisodeVideoFromVideos(newTask.ID, episodeID, "", "", &progress)
+			s.processEpisodeVideoFromVideos(taskID, episodeID, "", "", &progress)
 		} else if phase == "merge" {
-			s.processEpisodeVideoFromMerge(newTask.ID, episodeID, "", "")
+			s.processEpisodeVideoFromMerge(taskID, episodeID, "", "")
 		}
 	}()
 
-	return newTask.ID, nil
+	// ⭐ 改进：返回原任务ID，而不是新任务ID
+	return taskID, nil
 }
 
 // CancelEpisodeVideoTask 取消一键章节视频任务
@@ -876,15 +1176,18 @@ func (s *BatchService) processEpisodeVideo(taskID string, episodeID string, mode
 				"error", err)
 			progress.FailedStoryboards = append(progress.FailedStoryboards, sb.StoryboardNumber)
 			failedInFrames = true
-			break
+			// ⭐ 改进：不 break，继续处理剩余分镜
+			continue
 		}
 
 		progress.CompletedFrames = i + 1
 	}
 
-	if failedInFrames {
+	// ⭐ 改进：即使有失败，如果已完成部分分镜，也继续后续阶段
+	if failedInFrames && progress.CompletedFrames == 0 {
+		// 如果所有分镜都失败了，直接返回错误
 		s.updateEpisodeVideoError(taskID, &progress,
-			fmt.Sprintf("分镜%d生图失败", progress.FailedStoryboards[len(progress.FailedStoryboards)-1]))
+			fmt.Sprintf("所有分镜生图失败"))
 		return
 	}
 
@@ -917,6 +1220,23 @@ func (s *BatchService) processEpisodeVideo(taskID string, episodeID string, mode
 		overallProgress := 33 + (i*33)/(total*3)
 		s.updateEpisodeVideoProgress(taskID, &progress, msg, overallProgress)
 
+		// ⭐ 改进：检查是否已有正在处理的视频生成任务
+		if existingVideoGen, exists := s.hasProcessingVideoGeneration(sb.ID); exists {
+			s.log.Infow("Found existing video generation, waiting", 
+				"storyboard_id", sb.ID, 
+				"video_gen_id", existingVideoGen.ID)
+			
+			if err := s.waitForVideoGeneration(existingVideoGen.ID); err == nil {
+				// 任务完成
+				progress.CompletedVideos = i + 1
+				continue
+			}
+			// 任务失败，继续执行下面的逻辑
+			s.log.Warnw("Existing video generation task failed, will create new one", 
+				"storyboard_id", sb.ID, 
+				"video_gen_id", existingVideoGen.ID)
+		}
+
 		err := s.generateVideoForStoryboard(dramaIDStr, &sb, model, provider, duration)
 		if err != nil {
 			s.log.Warnw("Video generation failed for storyboard",
@@ -925,15 +1245,18 @@ func (s *BatchService) processEpisodeVideo(taskID string, episodeID string, mode
 				"error", err)
 			progress.FailedStoryboards = append(progress.FailedStoryboards, sb.StoryboardNumber)
 			failedInVideos = true
-			break
+			// ⭐ 改进：不 break，继续处理剩余分镜
+			continue
 		}
 
 		progress.CompletedVideos = i + 1
 	}
 
-	if failedInVideos {
+	// ⭐ 改进：即使有失败，如果已完成部分分镜，也继续阶段3
+	if failedInVideos && progress.CompletedVideos == 0 {
+		// 如果所有分镜都失败了，直接返回错误
 		s.updateEpisodeVideoError(taskID, &progress,
-			fmt.Sprintf("分镜%d出片失败", progress.FailedStoryboards[len(progress.FailedStoryboards)-1]))
+			fmt.Sprintf("所有分镜出片失败"))
 		return
 	}
 
@@ -998,6 +1321,89 @@ func (s *BatchService) processEpisodeVideo(taskID string, episodeID string, mode
 	}
 }
 
+// processEpisodeVideoFromFrames 从生图阶段开始重试（从失败分镜开始，然后继续后续阶段）
+func (s *BatchService) processEpisodeVideoFromFrames(taskID string, episodeID string, model string, dramaID string, previousProgress *EpisodeVideoTaskProgress) {
+	var episode models.Episode
+	if err := s.db.Preload("Storyboards").Preload("Drama").Where("id = ?", episodeID).First(&episode).Error; err != nil {
+		s.taskService.UpdateTaskError(taskID, fmt.Errorf("剧集不存在"))
+		return
+	}
+
+	storyboards := episode.Storyboards
+	if len(storyboards) == 0 {
+		s.taskService.UpdateTaskError(taskID, fmt.Errorf("没有分镜"))
+		return
+	}
+
+	sort.Slice(storyboards, func(i, j int) bool {
+		return storyboards[i].StoryboardNumber < storyboards[j].StoryboardNumber
+	})
+
+	total := len(storyboards)
+	dramaIDStr := strconv.FormatUint(uint64(episode.DramaID), 10)
+	if dramaID != "" {
+		dramaIDStr = dramaID
+	}
+
+	progress := EpisodeVideoTaskProgress{
+		Phase:             "frames",
+		TotalStoryboards:  total,
+		CurrentStoryboard: 0,
+		CompletedFrames:   previousProgress.CompletedFrames,  // ⭐ 保留已完成的分镜数
+		CompletedVideos:   previousProgress.CompletedVideos,
+		Cancelled:         false,
+		FailedStoryboards: []int{},
+	}
+
+	s.updateEpisodeVideoProgress(taskID, &progress, "阶段1/3：正在生图...", 0)
+
+	failedInFrames := false
+	// ⭐ 改进：从已完成的分镜数开始，处理剩余分镜
+	for i, sb := range storyboards {
+		// 跳过已完成的分镜
+		if i < previousProgress.CompletedFrames {
+			continue
+		}
+		
+		if s.checkEpisodeVideoCancelled(taskID, &progress) {
+			s.updateEpisodeVideoCancelled(taskID, &progress)
+			return
+		}
+
+		progress.CurrentStoryboard = sb.StoryboardNumber
+		msg := fmt.Sprintf("阶段1/3：正在生图（%d/%d）- 分镜%d", i+1, total, sb.StoryboardNumber)
+		s.updateEpisodeVideoProgress(taskID, &progress, msg, (i*100)/(total*3))
+
+		err := s.generateFirstLastFramesForStoryboard(dramaIDStr, &sb)
+		if err != nil {
+			s.log.Warnw("Frame generation failed for storyboard",
+				"storyboard_id", sb.ID,
+				"storyboard_number", sb.StoryboardNumber,
+				"error", err)
+			progress.FailedStoryboards = append(progress.FailedStoryboards, sb.StoryboardNumber)
+			failedInFrames = true
+			// ⭐ 改进：不 break，继续处理剩余分镜
+			continue
+		}
+
+		// 更新已完成数量（基于 previousProgress.CompletedFrames）
+		progress.CompletedFrames = previousProgress.CompletedFrames + (i - previousProgress.CompletedFrames + 1)
+	}
+
+	// ⭐ 改进：即使有失败，如果已完成部分分镜，也继续后续阶段
+	if failedInFrames && progress.CompletedFrames == previousProgress.CompletedFrames {
+		// 如果所有剩余分镜都失败了，直接返回错误
+		s.updateEpisodeVideoError(taskID, &progress,
+			fmt.Sprintf("所有剩余分镜生图失败"))
+		return
+	}
+
+	// 阶段1完成，继续阶段2和阶段3
+	// 复用 processEpisodeVideoFromVideos 的逻辑，但需要传入更新后的 progress
+	progress.Phase = "videos"
+	s.processEpisodeVideoFromVideos(taskID, episodeID, model, dramaID, &progress)
+}
+
 // processEpisodeVideoFromVideos 从视频阶段开始重试（跳过已成功生图的分镜）
 func (s *BatchService) processEpisodeVideoFromVideos(taskID string, episodeID string, model string, dramaID string, previousProgress *EpisodeVideoTaskProgress) {
 	var episode models.Episode
@@ -1027,7 +1433,7 @@ func (s *BatchService) processEpisodeVideoFromVideos(taskID string, episodeID st
 		TotalStoryboards:  total,
 		CurrentStoryboard: 0,
 		CompletedFrames:   previousProgress.CompletedFrames,
-		CompletedVideos:   0,
+		CompletedVideos:   previousProgress.CompletedVideos,  // ⭐ 改进：保留已完成的分镜数
 		Cancelled:         false,
 		FailedStoryboards: []int{},
 	}
@@ -1039,7 +1445,13 @@ func (s *BatchService) processEpisodeVideoFromVideos(taskID string, episodeID st
 	duration := 5
 	failedInVideos := false
 
+	// ⭐ 改进：从已完成的分镜数开始，处理剩余分镜
 	for i, sb := range storyboards {
+		// 跳过已完成的分镜
+		if i < previousProgress.CompletedVideos {
+			continue
+		}
+		
 		if s.checkEpisodeVideoCancelled(taskID, &progress) {
 			s.updateEpisodeVideoCancelled(taskID, &progress)
 			return
@@ -1050,6 +1462,23 @@ func (s *BatchService) processEpisodeVideoFromVideos(taskID string, episodeID st
 		overallProgress := 33 + (i*33)/(total*3)
 		s.updateEpisodeVideoProgress(taskID, &progress, msg, overallProgress)
 
+		// ⭐ 改进：检查是否已有正在处理的视频生成任务
+		if existingVideoGen, exists := s.hasProcessingVideoGeneration(sb.ID); exists {
+			s.log.Infow("Found existing video generation, waiting", 
+				"storyboard_id", sb.ID, 
+				"video_gen_id", existingVideoGen.ID)
+			
+			if err := s.waitForVideoGeneration(existingVideoGen.ID); err == nil {
+				// 任务完成，更新已完成数量（基于 previousProgress.CompletedVideos）
+				progress.CompletedVideos = previousProgress.CompletedVideos + (i - previousProgress.CompletedVideos + 1)
+				continue
+			}
+			// 任务失败，继续执行下面的逻辑
+			s.log.Warnw("Existing video generation task failed, will create new one", 
+				"storyboard_id", sb.ID, 
+				"video_gen_id", existingVideoGen.ID)
+		}
+
 		err := s.generateVideoForStoryboard(dramaIDStr, &sb, model, provider, duration)
 		if err != nil {
 			s.log.Warnw("Video generation failed for storyboard",
@@ -1058,15 +1487,19 @@ func (s *BatchService) processEpisodeVideoFromVideos(taskID string, episodeID st
 				"error", err)
 			progress.FailedStoryboards = append(progress.FailedStoryboards, sb.StoryboardNumber)
 			failedInVideos = true
-			break
+			// ⭐ 改进：不 break，继续处理剩余分镜
+			continue
 		}
 
-		progress.CompletedVideos = i + 1
+		// 更新已完成数量（基于 previousProgress.CompletedVideos）
+		progress.CompletedVideos = previousProgress.CompletedVideos + (i - previousProgress.CompletedVideos + 1)
 	}
 
-	if failedInVideos {
+	// ⭐ 改进：即使有失败，如果已完成部分分镜，也继续阶段3
+	if failedInVideos && progress.CompletedVideos == previousProgress.CompletedVideos {
+		// 如果所有剩余分镜都失败了，直接返回错误
 		s.updateEpisodeVideoError(taskID, &progress,
-			fmt.Sprintf("分镜%d出片失败", progress.FailedStoryboards[len(progress.FailedStoryboards)-1]))
+			fmt.Sprintf("所有剩余分镜出片失败"))
 		return
 	}
 
@@ -1416,9 +1849,20 @@ func (s *BatchService) CancelTask(taskID string) error {
 	// 更新任务状态为已取消，并保存结果
 	now := time.Now()
 	resultJSON, _ := json.Marshal(result)
+	
+	// ⭐ 改进：保留当前进度，而不是重置为0
+	// 这样用户可以看到取消时的进度，继续执行时也能正确显示
+	currentProgress := task.Progress
+	if currentProgress < 0 {
+		currentProgress = 0
+	}
+	if currentProgress > 100 {
+		currentProgress = 100
+	}
+	
 	if err := s.db.Model(&models.AsyncTask{}).Where("id = ?", taskID).Updates(map[string]interface{}{
 		"status":       "failed",
-		"progress":     0,
+		"progress":     currentProgress,  // ⭐ 保留当前进度，而不是设置为0
 		"message":      "已取消",
 		"error":        "用户取消",
 		"result":       string(resultJSON), // ⭐ 保存结果

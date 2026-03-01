@@ -36,6 +36,14 @@ export const batchAPI = {
     })
   },
 
+  /** 恢复一键生图任务（继续执行失败的分镜） */
+  resumeBatchFrames(data: {
+    task_id: string
+    failed_storyboard_ids: number[]
+  }) {
+    return request.post<{ task_id: string }>('/batch/resume-batch-frames', data)
+  },
+
   /** 一键出片：为当前剧集所有分镜用首尾帧生成视频，返回 task_id */
   generateVideos(episodeId: string, model: string) {
     return request.post<{ task_id: string }>('/batch/generate-videos', {
@@ -62,6 +70,7 @@ export const batchAPI = {
   retryEpisodeVideoPhase(data: {
     task_id: string
     phase: 'frames' | 'videos' | 'merge'
+    reset_progress?: boolean  // true: 全部重试（重置进度），false: 继续执行（从失败处继续）
   }) {
     return request.post<{ task_id: string }>('/batch/retry-episode-video-phase', data)
   },

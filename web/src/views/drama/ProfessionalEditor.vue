@@ -3282,7 +3282,7 @@ const handleCancelTask = async () => {
 };
 
 // 重试某个阶段
-const handleRetryEpisodePhase = async (phase: 'frames' | 'videos' | 'merge') => {
+const handleRetryEpisodePhase = async (phase: 'frames' | 'videos' | 'merge', resetProgress: boolean = false) => {
   if (!lastEpisodeVideoResult.value?.task_id) {
     ElMessage.warning('没有可重试的任务');
     return;
@@ -3291,7 +3291,8 @@ const handleRetryEpisodePhase = async (phase: 'frames' | 'videos' | 'merge') => 
   try {
     const data = await batchAPI.retryEpisodeVideoPhase({
       task_id: lastEpisodeVideoResult.value.task_id,
-      phase: phase
+      phase: phase,
+      reset_progress: resetProgress  // 传递重置标志
     });
     const taskId = data?.task_id;
     if (!taskId) {
@@ -3694,10 +3695,11 @@ const handleRetryTask = async (task: any, mode: 'retry' | 'continue' = 'retry') 
             // 提示用户将处理的分镜数量
             ElMessage.info(`检测到 ${failedStoryboardIds.length} 个分镜需要重新生图，将开始处理`);
             
-            await batchAPI.retryFailedFrames(
-              episodeId.value.toString(),
-              failedStoryboardIds
-            );
+            // ⭐ 改进：恢复原任务，而不是创建新任务
+            await batchAPI.resumeBatchFrames({
+              task_id: task.id,
+              failed_storyboard_ids: failedStoryboardIds
+            });
             ElMessage.success(`继续执行任务已提交，将处理 ${failedStoryboardIds.length} 个分镜`);
             await loadTaskHistory();
             return;
@@ -3743,10 +3745,11 @@ const handleRetryTask = async (task: any, mode: 'retry' | 'continue' = 'retry') 
               }
               
               if (storyboardValidation.valid.length > 0) {
-                await batchAPI.retryFailedFrames(
-                  episodeId.value.toString(),
-                  storyboardValidation.valid
-                );
+                // ⭐ 改进：恢复原任务，而不是创建新任务
+                await batchAPI.resumeBatchFrames({
+                  task_id: task.id,
+                  failed_storyboard_ids: storyboardValidation.valid
+                });
                 ElMessage.success(`继续执行任务已提交，将处理 ${storyboardValidation.valid.length} 个分镜`);
               } else {
                 ElMessage.warning('所有失败的分镜都已不存在，建议使用"全部重试"重新开始');
@@ -3812,7 +3815,7 @@ const handleRetryTask = async (task: any, mode: 'retry' | 'continue' = 'retry') 
         if (!lastEpisodeVideoResult.value) {
           lastEpisodeVideoResult.value = { task_id: task.id };
         }
-        await handleRetryEpisodePhase('frames');
+        await handleRetryEpisodePhase('frames', true);  // 传入 true 表示重置进度
       }
     }
   } catch (error: any) {

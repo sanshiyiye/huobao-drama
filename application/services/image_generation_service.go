@@ -346,6 +346,24 @@ func (s *ImageGenerationService) pollTaskStatus(imageGenID uint, client image.Im
 	for i := 0; i < maxAttempts; i++ {
 		time.Sleep(pollInterval)
 
+		// ⭐ 改进：检查当前状态是否已被取消或失败
+		var currentImageGen models.ImageGeneration
+		if err := s.db.First(&currentImageGen, imageGenID).Error; err != nil {
+			s.log.Errorw("Failed to load image generation", "error", err, "id", imageGenID)
+			return
+		}
+
+		// 如果状态已经被标记为 failed（可能是用户取消），停止轮询
+		if currentImageGen.Status == models.ImageStatusFailed {
+			// 检查是否是用户取消
+			if currentImageGen.ErrorMsg != nil && strings.Contains(*currentImageGen.ErrorMsg, "用户取消") {
+				s.log.Infow("Image generation was cancelled by user, stopping poll", 
+					"id", imageGenID, 
+					"error_msg", *currentImageGen.ErrorMsg)
+				return
+			}
+		}
+
 		result, err := client.GetTaskStatus(taskID)
 		if err != nil {
 			s.log.Errorw("Failed to get task status", "error", err, "task_id", taskID)
@@ -353,6 +371,19 @@ func (s *ImageGenerationService) pollTaskStatus(imageGenID uint, client image.Im
 		}
 
 		if result.Completed {
+			// ⭐ 改进：在完成前再次检查状态
+			var checkImageGen models.ImageGeneration
+			if err := s.db.First(&checkImageGen, imageGenID).Error; err == nil {
+				if checkImageGen.Status == models.ImageStatusFailed {
+					// 检查是否是用户取消
+					if checkImageGen.ErrorMsg != nil && strings.Contains(*checkImageGen.ErrorMsg, "用户取消") {
+						s.log.Infow("Image generation was cancelled by user, skipping completion", 
+							"id", imageGenID, 
+							"error_msg", *checkImageGen.ErrorMsg)
+						return
+					}
+				}
+			}
 			s.completeImageGeneration(imageGenID, result)
 			return
 		}
@@ -367,6 +398,24 @@ func (s *ImageGenerationService) pollTaskStatus(imageGenID uint, client image.Im
 }
 
 func (s *ImageGenerationService) completeImageGeneration(imageGenID uint, result *image.ImageResult) {
+	// ⭐ 改进：在更新前检查当前状态是否已被取消
+	var imageGen models.ImageGeneration
+	if err := s.db.Where("id = ?", imageGenID).First(&imageGen).Error; err != nil {
+		s.log.Errorw("Failed to load image generation", "error", err, "id", imageGenID)
+		return
+	}
+
+	// 如果状态已经被标记为 failed 且是用户取消，跳过更新
+	if imageGen.Status == models.ImageStatusFailed {
+		if imageGen.ErrorMsg != nil && strings.Contains(*imageGen.ErrorMsg, "用户取消") {
+			s.log.Infow("Image generation was cancelled by user, skipping completion update", 
+				"id", imageGenID, 
+				"error_msg", *imageGen.ErrorMsg,
+				"api_result_url", result.ImageURL)
+			return
+		}
+	}
+
 	now := time.Now()
 
 	// 下载图片到本地存储并保存相对路径到数据库
@@ -374,11 +423,7 @@ func (s *ImageGenerationService) completeImageGeneration(imageGenID uint, result
 	if s.localStorage != nil && result.ImageURL != "" &&
 		(strings.HasPrefix(result.ImageURL, "http://") || strings.HasPrefix(result.ImageURL, "https://")) {
 		var filename string
-		// 首先获取 imageGen 变量
-		var imageGen models.ImageGeneration
-		if err := s.db.First(&imageGen, imageGenID).Error; err != nil {
-			s.log.Warnw("Failed to get image generation record", "error", err, "image_gen_id", imageGenID)
-		}
+		// imageGen 已经在上面加载了，这里可以直接使用
 
 		// 根据图片类型获取对应的引用命名作为文件名
 		if imageGen.CharacterID != nil {
@@ -434,14 +479,8 @@ func (s *ImageGenerationService) completeImageGeneration(imageGenID uint, result
 		updates["height"] = result.Height
 	}
 
-	// 更新image_generation记录
-	var imageGen models.ImageGeneration
-	if err := s.db.Where("id = ?", imageGenID).First(&imageGen).Error; err != nil {
-		s.log.Errorw("Failed to load image generation", "error", err, "id", imageGenID)
-		return
-	}
-
 	// 使用 Updates 更新基本字段
+	// ⭐ 注意：imageGen 已经在函数开头加载了，这里不需要重新加载
 	if err := s.db.Model(&models.ImageGeneration{}).Where("id = ?", imageGenID).Updates(updates).Error; err != nil {
 		s.log.Errorw("Failed to update image generation", "error", err, "id", imageGenID)
 		return

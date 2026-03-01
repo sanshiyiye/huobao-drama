@@ -112,6 +112,22 @@ func (s *TaskService) GetTasksByResource(resourceID string) ([]*models.AsyncTask
 	return tasks, nil
 }
 
+// ResumeTask 恢复任务（从 failed/cancelled 状态恢复为 processing）
+func (s *TaskService) ResumeTask(taskID string, progress int, message string) error {
+	updates := map[string]interface{}{
+		"status":       "processing",
+		"progress":     progress,
+		"message":     message,
+		"updated_at":   time.Now(),
+		"completed_at": nil,  // 清除完成时间
+		"error":        nil,  // 清除错误信息
+	}
+
+	return s.db.Model(&models.AsyncTask{}).
+		Where("id = ?", taskID).
+		Updates(updates).Error
+}
+
 // DeleteTask 删除任务
 func (s *TaskService) DeleteTask(taskID string) error {
 	result := s.db.Where("id = ?", taskID).Delete(&models.AsyncTask{})

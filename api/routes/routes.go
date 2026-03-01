@@ -163,6 +163,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 			batch.POST("/generate-frames", batchHandler.BatchGenerateFrames)
 			batch.POST("/generate-videos", batchHandler.BatchGenerateVideos)
 			batch.POST("/retry-failed-frames", batchHandler.BatchRetryFailedFrames)
+			batch.POST("/resume-batch-frames", batchHandler.ResumeBatchFramesTask)
 			batch.POST("/generate-episode-video", batchHandler.BatchGenerateEpisodeVideo)
 			batch.POST("/retry-episode-video-phase", batchHandler.RetryEpisodeVideoPhase)
 			batch.POST("/cancel-episode-video", batchHandler.CancelEpisodeVideoTask)
