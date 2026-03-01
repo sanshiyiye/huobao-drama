@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/drama-generator/backend/pkg/logger"
 )
 
 type GeminiClient struct {
@@ -101,7 +103,6 @@ func (c *GeminiClient) GenerateText(prompt string, systemPrompt string, options 
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
-		fmt.Printf("Gemini: Failed to marshal request: %v\n", err)
 		return "", fmt.Errorf("marshal request: %w", err)
 	}
 
@@ -110,50 +111,51 @@ func (c *GeminiClient) GenerateText(prompt string, systemPrompt string, options 
 	endpoint = strings.ReplaceAll(endpoint, "{model}", model)
 	url := fmt.Sprintf("%s?key=%s", endpoint, c.APIKey)
 
-	// 打印请求信息（隐藏 API Key）
 	safeURL := strings.Replace(url, c.APIKey, "***", 1)
-	fmt.Printf("Gemini: Sending request to: %s\n", safeURL)
 	requestPreview := string(jsonData)
 	if len(jsonData) > 300 {
 		requestPreview = string(jsonData[:300]) + "..."
 	}
-	fmt.Printf("Gemini: Request body: %s\n", requestPreview)
+	logger.L().Debugw("Gemini request",
+		"url", safeURL,
+		"model", model,
+		"request_preview", requestPreview,
+	)
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		fmt.Printf("Gemini: Failed to create request: %v\n", err)
 		return "", fmt.Errorf("create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 
-	fmt.Printf("Gemini: Executing HTTP request...\n")
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		fmt.Printf("Gemini: HTTP request failed: %v\n", err)
 		return "", fmt.Errorf("send request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	fmt.Printf("Gemini: Received response with status: %d\n", resp.StatusCode)
-
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Printf("Gemini: Failed to read response body: %v\n", err)
 		return "", fmt.Errorf("read response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("Gemini: API error (status %d): %s\n", resp.StatusCode, string(body))
+		logger.L().Warnw("Gemini API error response",
+			"status", resp.StatusCode,
+			"response_preview", truncatePreview(string(body), 500),
+		)
 		return "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
 	}
 
-	// 打印响应体用于调试
 	bodyPreview := string(body)
 	if len(body) > 500 {
 		bodyPreview = string(body[:500]) + "..."
 	}
-	fmt.Printf("Gemini: Response body: %s\n", bodyPreview)
+	logger.L().Debugw("Gemini response",
+		"status", resp.StatusCode,
+		"response_preview", bodyPreview,
+	)
 
 	var result GeminiTextResponse
 	if err := json.Unmarshal(body, &result); err != nil {
@@ -161,24 +163,19 @@ func (c *GeminiClient) GenerateText(prompt string, systemPrompt string, options 
 		if len(body) > 200 {
 			errorPreview = string(body[:200])
 		}
-		fmt.Printf("Gemini: Failed to parse response: %v\n", err)
 		return "", fmt.Errorf("parse response: %w, body preview: %s", err, errorPreview)
 	}
 
-	fmt.Printf("Gemini: Successfully parsed response, candidates count: %d\n", len(result.Candidates))
-
 	if len(result.Candidates) == 0 {
-		fmt.Printf("Gemini: No candidates in response\n")
 		return "", fmt.Errorf("no candidates in response")
 	}
 
 	if len(result.Candidates[0].Content.Parts) == 0 {
-		fmt.Printf("Gemini: No parts in first candidate\n")
 		return "", fmt.Errorf("no parts in response")
 	}
 
 	responseText := result.Candidates[0].Content.Parts[0].Text
-	fmt.Printf("Gemini: Generated text: %s\n", responseText)
+	logger.L().Debugw("Gemini generated text", "content_length", len(responseText))
 
 	return responseText, nil
 }
@@ -188,12 +185,16 @@ func (c *GeminiClient) GenerateImage(prompt string, size string, n int) ([]strin
 }
 
 func (c *GeminiClient) TestConnection() error {
-	fmt.Printf("Gemini: TestConnection called with BaseURL=%s, Model=%s, Endpoint=%s\n", c.BaseURL, c.Model, c.Endpoint)
+	logger.L().Debugw("Gemini TestConnection start",
+		"base_url", c.BaseURL,
+		"model", c.Model,
+		"endpoint", c.Endpoint,
+	)
 	_, err := c.GenerateText("Hello", "")
 	if err != nil {
-		fmt.Printf("Gemini: TestConnection failed: %v\n", err)
+		logger.L().Warnw("Gemini TestConnection failed", "error", err)
 	} else {
-		fmt.Printf("Gemini: TestConnection succeeded\n")
+		logger.L().Debugw("Gemini TestConnection succeeded")
 	}
 	return err
 }

@@ -30,6 +30,11 @@ services:
       # 例如：http://host.docker.internal:11434 (Ollama)
     extra_hosts:
       - "host.docker.internal:host-gateway"  # 统一支持所有平台
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5678/health"]

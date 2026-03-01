@@ -25,6 +25,7 @@ func main() {
 	}
 
 	logr := logger.NewLogger(cfg.App.Debug)
+	logger.SetGlobal(logr)
 	defer logr.Sync()
 
 	logr.Info("Starting Drama Generator API Server...")

@@ -7,6 +7,9 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/drama-generator/backend/pkg/logger"
+	"github.com/drama-generator/backend/pkg/utils"
 )
 
 type VolcEngineImageClient struct {
@@ -105,8 +108,12 @@ func (c *VolcEngineImageClient) GenerateImage(prompt string, opts ...ImageOption
 	}
 
 	url := c.BaseURL + c.Endpoint
-	fmt.Printf("[VolcEngine Image] Request URL: %s\n", url)
-	fmt.Printf("[VolcEngine Image] Request Body: %s\n", string(jsonData))
+	logBody := utils.TruncateBase64InJSON(jsonData)
+	logger.L().Debugw("VolcEngine image request",
+		"url", url,
+		"model", model,
+		"request_preview", truncateBody(logBody, 300),
+	)
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -127,9 +134,13 @@ func (c *VolcEngineImageClient) GenerateImage(prompt string, opts ...ImageOption
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
-	fmt.Printf("VolcEngine Image API Response: %s\n", string(body))
+	logger.L().Debugw("VolcEngine image response", "response_preview", truncateBody(utils.TruncateBase64InJSON(body), 500))
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		logger.L().Warnw("VolcEngine image API error",
+			"status", resp.StatusCode,
+			"response_preview", truncateBody(utils.TruncateBase64InJSON(body), 500),
+		)
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
 	}
 

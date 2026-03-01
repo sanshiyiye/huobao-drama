@@ -7,6 +7,9 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/drama-generator/backend/pkg/logger"
+	"github.com/drama-generator/backend/pkg/utils"
 )
 
 type OpenAIImageClient struct {
@@ -79,8 +82,12 @@ func (c *OpenAIImageClient) GenerateImage(prompt string, opts ...ImageOption) (*
 	}
 
 	url := c.BaseURL + c.Endpoint
-	fmt.Printf("[OpenAI Image] Request URL: %s\n", url)
-	fmt.Printf("[OpenAI Image] Request Body: %s\n", string(jsonData))
+	logBody := utils.TruncateBase64InJSON(jsonData)
+	logger.L().Debugw("OpenAI image request",
+		"url", url,
+		"model", model,
+		"request_preview", truncateBody(logBody, 300),
+	)
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -102,10 +109,14 @@ func (c *OpenAIImageClient) GenerateImage(prompt string, opts ...ImageOption) (*
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		logger.L().Warnw("OpenAI image API error",
+			"status", resp.StatusCode,
+			"response_preview", truncateBody(utils.TruncateBase64InJSON(body), 500),
+		)
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
 	}
 
-	fmt.Printf("OpenAI API Response: %s\n", string(body))
+	logger.L().Debugw("OpenAI image response", "response_preview", truncateBody(utils.TruncateBase64InJSON(body), 500))
 
 	var result DALLEResponse
 	if err := json.Unmarshal(body, &result); err != nil {
@@ -125,4 +136,11 @@ func (c *OpenAIImageClient) GenerateImage(prompt string, opts ...ImageOption) (*
 
 func (c *OpenAIImageClient) GetTaskStatus(taskID string) (*ImageResult, error) {
 	return nil, fmt.Errorf("not supported for OpenAI/DALL-E")
+}
+
+func truncateBody(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	return s[:limit] + "..."
 }

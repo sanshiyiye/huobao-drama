@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/drama-generator/backend/pkg/logger"
 )
 
 type OpenAIClient struct {
@@ -116,7 +118,7 @@ func (c *OpenAIClient) sendChatRequest(req *ChatCompletionRequest) (*ChatComplet
 		retryReq := *req
 		retryReq.MaxTokens = nil
 		retryReq.MaxCompletionTokens = &tokens
-		fmt.Printf("OpenAI: retrying with max_completion_tokens=%d\n", tokens)
+		logger.L().Debugw("OpenAI retrying with max_completion_tokens", "max_completion_tokens", tokens)
 		return c.doChatRequest(&retryReq)
 	}
 
@@ -126,48 +128,47 @@ func (c *OpenAIClient) sendChatRequest(req *ChatCompletionRequest) (*ChatComplet
 func (c *OpenAIClient) doChatRequest(req *ChatCompletionRequest) (*ChatCompletionResponse, error) {
 	jsonData, err := json.Marshal(req)
 	if err != nil {
-		fmt.Printf("OpenAI: Failed to marshal request: %v\n", err)
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	url := c.BaseURL + c.Endpoint
 
-	// 打印请求信息
-	fmt.Printf("OpenAI: Sending request to: %s\n", url)
-	fmt.Printf("OpenAI: BaseURL=%s, Endpoint=%s, Model=%s\n", c.BaseURL, c.Endpoint, c.Model)
 	requestPreview := string(jsonData)
 	if len(jsonData) > 300 {
 		requestPreview = string(jsonData[:300]) + "..."
 	}
-	fmt.Printf("OpenAI: Request body: %s\n", requestPreview)
+	logger.L().Debugw("OpenAI request",
+		"url", url,
+		"base_url", c.BaseURL,
+		"endpoint", c.Endpoint,
+		"model", c.Model,
+		"request_preview", requestPreview,
+	)
 
 	httpReq, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		fmt.Printf("OpenAI: Failed to create request: %v\n", err)
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+c.APIKey)
 
-	fmt.Printf("OpenAI: Executing HTTP request...\n")
 	resp, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
-		fmt.Printf("OpenAI: HTTP request failed: %v\n", err)
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	fmt.Printf("OpenAI: Received response with status: %d\n", resp.StatusCode)
-
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Printf("OpenAI: Failed to read response body: %v\n", err)
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("OpenAI: API error (status %d): %s\n", resp.StatusCode, string(body))
+		logger.L().Warnw("OpenAI API error response",
+			"status", resp.StatusCode,
+			"response_preview", truncatePreview(string(body), 500),
+		)
 		var errResp ErrorResponse
 		if err := json.Unmarshal(body, &errResp); err != nil {
 			return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
@@ -175,12 +176,14 @@ func (c *OpenAIClient) doChatRequest(req *ChatCompletionRequest) (*ChatCompletio
 		return nil, fmt.Errorf("API error: %s", errResp.Error.Message)
 	}
 
-	// 打印响应体用于调试
 	bodyPreview := string(body)
 	if len(body) > 500 {
 		bodyPreview = string(body[:500]) + "..."
 	}
-	fmt.Printf("OpenAI: Response body: %s\n", bodyPreview)
+	logger.L().Debugw("OpenAI response",
+		"status", resp.StatusCode,
+		"response_preview", bodyPreview,
+	)
 
 	var chatResp ChatCompletionResponse
 	if err := json.Unmarshal(body, &chatResp); err != nil {
@@ -188,14 +191,10 @@ func (c *OpenAIClient) doChatRequest(req *ChatCompletionRequest) (*ChatCompletio
 		if len(body) > 200 {
 			errorPreview = string(body[:200])
 		}
-		fmt.Printf("OpenAI: Failed to parse response: %v\n", err)
 		return nil, fmt.Errorf("failed to unmarshal response: %w, body preview: %s", err, errorPreview)
 	}
 
-	fmt.Printf("OpenAI: Successfully parsed response, choices count: %d\n", len(chatResp.Choices))
-
 	if len(chatResp.Choices) == 0 {
-		fmt.Printf("OpenAI: No choices in response\n")
 		return nil, fmt.Errorf("no choices in response")
 	}
 
@@ -205,7 +204,11 @@ func (c *OpenAIClient) doChatRequest(req *ChatCompletionRequest) (*ChatCompletio
 		content := chatResp.Choices[0].Message.Content
 		usage := chatResp.Usage
 
-		fmt.Printf("OpenAI: finish_reason=%s, content_length=%d\n", finishReason, len(content))
+		logger.L().Debugw("OpenAI choice summary",
+			"finish_reason", finishReason,
+			"content_length", len(content),
+			"total_tokens", usage.TotalTokens,
+		)
 
 		if finishReason == "content_filter" {
 			return nil, fmt.Errorf("AI内容被安全过滤器拦截，可能因为：\n1. 请求内容触发了安全策略\n2. 生成的内容包含敏感信息\n3. 建议：调整输入内容或联系API提供商调整过滤策略")
@@ -331,7 +334,11 @@ func (c *OpenAIClient) GenerateImage(prompt string, size string, n int) ([]strin
 }
 
 func (c *OpenAIClient) TestConnection() error {
-	fmt.Printf("OpenAI: TestConnection called with BaseURL=%s, Endpoint=%s, Model=%s\n", c.BaseURL, c.Endpoint, c.Model)
+	logger.L().Debugw("OpenAI TestConnection start",
+		"base_url", c.BaseURL,
+		"endpoint", c.Endpoint,
+		"model", c.Model,
+	)
 
 	messages := []ChatMessage{
 		{
@@ -342,9 +349,9 @@ func (c *OpenAIClient) TestConnection() error {
 
 	_, err := c.ChatCompletion(messages, WithMaxTokens(50))
 	if err != nil {
-		fmt.Printf("OpenAI: TestConnection failed: %v\n", err)
+		logger.L().Warnw("OpenAI TestConnection failed", "error", err)
 	} else {
-		fmt.Printf("OpenAI: TestConnection succeeded\n")
+		logger.L().Debugw("OpenAI TestConnection succeeded")
 	}
 	return err
 }
@@ -365,4 +372,11 @@ func shouldRetryWithMaxCompletionTokens(err error, req *ChatCompletionRequest) b
 		return true
 	}
 	return false
+}
+
+func truncatePreview(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	return s[:limit] + "..."
 }

@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/drama-generator/backend/pkg/logger"
+	"github.com/drama-generator/backend/pkg/utils"
 )
 
 // VolcesArkClient 火山引擎ARK视频生成客户端
@@ -94,7 +97,6 @@ func (c *VolcesArkClient) GenerateVideo(imageURL, prompt string, opts ...VideoOp
 
 	// 构建prompt文本（包含duration和ratio参数）
 	promptText := prompt
-	fmt.Printf("[VolcesARK] Original prompt (length: %d): %q\n", len(prompt), prompt)
 
 	if options.AspectRatio != "" {
 		promptText += fmt.Sprintf("  --ratio %s", options.AspectRatio)
@@ -103,20 +105,12 @@ func (c *VolcesArkClient) GenerateVideo(imageURL, prompt string, opts ...VideoOp
 		promptText += fmt.Sprintf("  --dur %d", options.Duration)
 	}
 
-	fmt.Printf("[VolcesARK] Final promptText (length: %d, isEmpty: %v): %q\n", len(promptText), promptText == "", promptText)
-	fmt.Printf("[VolcesARK] Prompt validation - hasVisibleChars: %v, firstChar: %q\n",
-		len(strings.TrimSpace(promptText)) > 0,
-		func() string { if len(promptText) > 0 { return string(promptText[0]) }; return "" }())
-
 	content := []VolcesArkContent{
 		{
 			Type: "text",
 			Text: promptText,
 		},
 	}
-
-	fmt.Printf("[VolcesARK] Content array built - length: %d, first item type: %s, first item text length: %d\n",
-		len(content), content[0].Type, len(content[0].Text))
 
 	// 处理不同的图片模式
 	// 1. 组图模式（多个reference_image）
@@ -184,8 +178,13 @@ func (c *VolcesArkClient) GenerateVideo(imageURL, prompt string, opts ...VideoOp
 	}
 
 	endpoint := c.BaseURL + c.Endpoint
-	fmt.Printf("[VolcesARK] Generating video - Endpoint: %s, FullURL: %s, Model: %s\n", c.Endpoint, endpoint, model)
-	fmt.Printf("[VolcesARK] Request body: %s\n", string(jsonData))
+	logBody := utils.TruncateBase64InJSON(jsonData)
+	logger.L().Debugw("VolcesARK video request",
+		"endpoint", c.Endpoint,
+		"url", endpoint,
+		"model", model,
+		"request_preview", truncateVideoBody(logBody, 500),
+	)
 
 	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -206,9 +205,11 @@ func (c *VolcesArkClient) GenerateVideo(imageURL, prompt string, opts ...VideoOp
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
-	fmt.Printf("[VolcesARK] Response status: %d, body: %s\n", resp.StatusCode, string(body))
-
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		logger.L().Warnw("VolcesARK API error",
+			"status", resp.StatusCode,
+			"response_preview", truncateVideoBody(utils.TruncateBase64InJSON(body), 500),
+		)
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
 	}
 
@@ -217,7 +218,7 @@ func (c *VolcesArkClient) GenerateVideo(imageURL, prompt string, opts ...VideoOp
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 
-	fmt.Printf("[VolcesARK] Video generation initiated - TaskID: %s, Status: %s\n", result.ID, result.Status)
+	logger.L().Debugw("VolcesARK generation accepted", "task_id", result.ID, "status", result.Status)
 
 	if result.Error != nil {
 		errorMsg := fmt.Sprintf("%v", result.Error)
@@ -251,7 +252,7 @@ func (c *VolcesArkClient) GetTaskStatus(taskID string) (*VideoResult, error) {
 	}
 
 	endpoint := c.BaseURL + queryPath
-	fmt.Printf("[VolcesARK] Querying task status - TaskID: %s, QueryEndpoint: %s, FullURL: %s\n", taskID, c.QueryEndpoint, endpoint)
+	logger.L().Debugw("VolcesARK query status", "task_id", taskID, "query_endpoint", c.QueryEndpoint, "url", endpoint)
 
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
@@ -271,14 +272,18 @@ func (c *VolcesArkClient) GetTaskStatus(taskID string) (*VideoResult, error) {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
-	fmt.Printf("[VolcesARK] Response body: %s\n", string(body))
+	logger.L().Debugw("VolcesARK status response", "response_preview", truncateVideoBody(utils.TruncateBase64InJSON(body), 500))
 
 	var result VolcesArkResponse
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 
-	fmt.Printf("[VolcesARK] Parsed result - ID: %s, Status: %s, VideoURL: %s\n", result.ID, result.Status, result.Content.VideoURL)
+	logger.L().Debugw("VolcesARK parsed status result",
+		"id", result.ID,
+		"status", result.Status,
+		"video_url", result.Content.VideoURL,
+	)
 
 	videoResult := &VideoResult{
 		TaskID:    result.ID,

@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/drama-generator/backend/pkg/logger"
+	"github.com/drama-generator/backend/pkg/utils"
 )
 
 // ChatfireClient Chatfire 视频生成客户端
@@ -103,54 +106,6 @@ func getErrorMessage(errorData json.RawMessage) string {
 	return string(errorData)
 }
 
-// truncateBase64InJSONForLog 复制 reqBody，仅将 ImageURL（及 content 中的 image_url.url）截断为前 5 个字符，其余字段原样打印，仅用于日志
-func truncateBase64InJSONForLog(raw []byte) string {
-	const truncateLen = 5
-
-	var body map[string]interface{}
-	if err := json.Unmarshal(raw, &body); err != nil {
-		return string(raw)
-	}
-
-	// 顶层 image_url（默认格式）
-	if v, ok := body["image_url"]; ok {
-		if s, ok := v.(string); ok && len(s) > truncateLen {
-			body["image_url"] = s[:truncateLen] + "...[truncated,len=" + fmt.Sprintf("%d", len(s)) + "]"
-		}
-	}
-
-	// 顶层 input_reference（Sora 格式）
-	if v, ok := body["input_reference"]; ok {
-		if s, ok := v.(string); ok && len(s) > truncateLen {
-			body["input_reference"] = s[:truncateLen] + "...[truncated,len=" + fmt.Sprintf("%d", len(s)) + "]"
-		}
-	}
-
-	// content 中每项的 image_url.url（豆包/火山格式）
-	if content, ok := body["content"]; ok {
-		if arr, ok := content.([]interface{}); ok {
-			for _, item := range arr {
-				if m, ok := item.(map[string]interface{}); ok {
-					if imgURL, ok := m["image_url"]; ok {
-						if imgMap, ok := imgURL.(map[string]interface{}); ok {
-							if urlVal, ok := imgMap["url"]; ok {
-								if s, ok := urlVal.(string); ok && len(s) > truncateLen {
-									imgMap["url"] = s[:truncateLen] + "...[truncated,len=" + fmt.Sprintf("%d", len(s)) + "]"
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-
-	out, err := json.Marshal(body)
-	if err != nil {
-		return string(raw)
-	}
-	return string(out)
-}
 
 func NewChatfireClient(baseURL, apiKey, model, endpoint, queryEndpoint string) *ChatfireClient {
 	if endpoint == "" {
@@ -331,10 +286,13 @@ func (c *ChatfireClient) GenerateVideo(imageURL, prompt string, opts ...VideoOpt
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 
 	// 打印请求信息（base64 等长字符串截断以便查看）
-	logBody := truncateBase64InJSONForLog(jsonData)
-	fmt.Printf("[ChatFire] Request URL: %s\n", endpoint)
-	fmt.Printf("[ChatFire] Request Headers: %v\n", req.Header)
-	fmt.Printf("[ChatFire] Request Body: %s\n", logBody)
+	logBody := utils.TruncateBase64InJSON(jsonData)
+	logger.L().Debugw("ChatFire video request",
+		"url", endpoint,
+		"model", model,
+		"request_headers", req.Header,
+		"request_preview", truncateVideoBody(logBody, 500),
+	)
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -348,11 +306,14 @@ func (c *ChatfireClient) GenerateVideo(imageURL, prompt string, opts ...VideoOpt
 	}
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		logger.L().Warnw("ChatFire video API error",
+			"status", resp.StatusCode,
+			"response_preview", truncateVideoBody(utils.TruncateBase64InJSON(body), 500),
+		)
 		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
 	}
 
-	// 调试日志：打印响应内容
-	fmt.Printf("[Chatfire] Response body: %s\n", string(body))
+	logger.L().Debugw("ChatFire video response", "response_preview", truncateVideoBody(utils.TruncateBase64InJSON(body), 500))
 
 	var result ChatfireResponse
 	if err := json.Unmarshal(body, &result); err != nil {
@@ -375,7 +336,7 @@ func (c *ChatfireClient) GenerateVideo(imageURL, prompt string, opts ...VideoOpt
 		status = result.Data.Status
 	}
 
-	fmt.Printf("[Chatfire] Parsed result - TaskID: %s, Status: %s\n", taskID, status)
+	logger.L().Debugw("ChatFire parsed generate result", "task_id", taskID, "status", status)
 
 	if errMsg := getErrorMessage(result.Error); errMsg != "" {
 		return nil, fmt.Errorf("chatfire error: %s", errMsg)
@@ -420,8 +381,7 @@ func (c *ChatfireClient) GetTaskStatus(taskID string) (*VideoResult, error) {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
-	// 调试日志：打印响应内容
-	fmt.Printf("[Chatfire] GetTaskStatus Response body: %s\n", string(body))
+	logger.L().Debugw("ChatFire status response", "response_preview", truncateVideoBody(utils.TruncateBase64InJSON(body), 500))
 
 	var result ChatfireTaskResponse
 	if err := json.Unmarshal(body, &result); err != nil {
@@ -453,7 +413,11 @@ func (c *ChatfireClient) GetTaskStatus(taskID string) (*VideoResult, error) {
 		videoURL = result.Content.VideoURL
 	}
 
-	fmt.Printf("[Chatfire] Parsed result - TaskID: %s, Status: %s, VideoURL: %s\n", responseTaskID, status, videoURL)
+	logger.L().Debugw("ChatFire parsed status result",
+		"task_id", responseTaskID,
+		"status", status,
+		"video_url", videoURL,
+	)
 
 	videoResult := &VideoResult{
 		TaskID:    responseTaskID,
@@ -471,4 +435,11 @@ func (c *ChatfireClient) GetTaskStatus(taskID string) (*VideoResult, error) {
 	}
 
 	return videoResult, nil
+}
+
+func truncateVideoBody(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	return s[:limit] + "..."
 }
