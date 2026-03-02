@@ -442,6 +442,63 @@ func (s *StoryboardService) GenerateStoryboard(episodeID string, model string) (
 	return task.ID, nil
 }
 
+// formatErrorMessage 将技术错误信息格式化为用户友好的提示
+func (s *StoryboardService) formatErrorMessage(err error) string {
+	errStr := err.Error()
+
+	// 超时错误
+	if strings.Contains(errStr, "timeout") || strings.Contains(errStr, "timeout awaiting response headers") {
+		return "请求超时，请检查网络连接或稍后重试"
+	}
+
+	// 网络连接错误
+	if strings.Contains(errStr, "connection refused") || strings.Contains(errStr, "no such host") {
+		return "无法连接到服务器，请检查网络连接"
+	}
+
+	// API 错误
+	if strings.Contains(errStr, "API error") || strings.Contains(errStr, "status") {
+		if strings.Contains(errStr, "401") || strings.Contains(errStr, "unauthorized") {
+			return "API 认证失败，请检查配置"
+		}
+		if strings.Contains(errStr, "429") || strings.Contains(errStr, "rate limit") {
+			return "请求过于频繁，请稍后重试"
+		}
+		if strings.Contains(errStr, "500") || strings.Contains(errStr, "502") || strings.Contains(errStr, "503") {
+			return "服务器暂时不可用，请稍后重试"
+		}
+		return "API 请求失败，请稍后重试"
+	}
+
+	// 模型不存在错误
+	if strings.Contains(errStr, "模型不存在") || strings.Contains(errStr, "model not found") {
+		return "指定的模型不存在或不可用，请检查模型配置"
+	}
+
+	// HTTP 请求错误（包含 URL 的技术细节）
+	if strings.Contains(errStr, "Post \"") || strings.Contains(errStr, "Get \"") {
+		// 提取错误类型
+		if strings.Contains(errStr, "timeout") {
+			return "请求超时，请稍后重试"
+		}
+		if strings.Contains(errStr, "connection") {
+			return "网络连接失败，请检查网络连接"
+		}
+		return "网络请求失败，请检查网络连接或稍后重试"
+	}
+
+	// 上下文超时错误
+	if strings.Contains(errStr, "context deadline exceeded") || strings.Contains(errStr, "context canceled") {
+		return "请求超时，请稍后重试"
+	}
+
+	// 默认返回原始错误，但限制长度以避免显示过多技术细节
+	if len(errStr) > 200 {
+		return errStr[:200] + "..."
+	}
+	return errStr
+}
+
 // processStoryboardGeneration 后台处理故事板生成
 func (s *StoryboardService) processStoryboardGeneration(taskID, episodeID, model, prompt string) {
 	// 更新任务状态为处理中
@@ -471,7 +528,9 @@ func (s *StoryboardService) processStoryboardGeneration(taskID, episodeID, model
 
 	if err != nil {
 		s.log.Errorw("Failed to generate storyboard", "error", err, "task_id", taskID)
-		if updateErr := s.taskService.UpdateTaskError(taskID, fmt.Errorf("生成分镜头失败: %w", err)); updateErr != nil {
+		// ✅ 格式化错误信息，提供用户友好的提示
+		friendlyError := s.formatErrorMessage(err)
+		if updateErr := s.taskService.UpdateTaskError(taskID, fmt.Errorf("生成分镜头失败: %s", friendlyError)); updateErr != nil {
 			s.log.Errorw("Failed to update task error", "error", updateErr, "task_id", taskID)
 		}
 		return

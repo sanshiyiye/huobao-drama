@@ -752,6 +752,16 @@ func (f *FFmpeg) GetVideoDuration(videoPath string) (float64, error) {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		// ✅ 改进：提供更友好的错误信息
+		errStr := err.Error()
+		if strings.Contains(errStr, "executable file not found") || strings.Contains(errStr, "not found in $PATH") {
+			f.log.Errorw("Failed to get video duration - ffprobe not found",
+				"path", videoPath,
+				"error", err,
+				"hint", "Please install ffmpeg: brew install ffmpeg (macOS) or apt-get install ffmpeg (Linux)")
+			return 0, fmt.Errorf("ffprobe 未安装，无法获取视频时长。请安装 ffmpeg: brew install ffmpeg (macOS) 或 apt-get install ffmpeg (Linux)")
+		}
+
 		f.log.Errorw("Failed to get video duration", "path", videoPath, "error", err)
 		return 0, fmt.Errorf("ffprobe failed: %w", err)
 	}

@@ -480,10 +480,21 @@ func (s *VideoGenerationService) completeVideoGeneration(videoGenID uint, videoU
 				"duration_seconds", durationInt,
 				"duration_float", probedDuration)
 		} else {
-			s.log.Errorw("Failed to probe video duration, duration will be 0",
+			// ✅ 改进：格式化错误信息，提供友好的提示
+			errStr := err.Error()
+			var friendlyMsg string
+			if strings.Contains(errStr, "executable file not found") || strings.Contains(errStr, "not found in $PATH") || strings.Contains(errStr, "ffprobe 未安装") {
+				friendlyMsg = "无法获取视频时长：系统未安装 ffmpeg。视频已生成成功，但时长信息缺失。请安装 ffmpeg: brew install ffmpeg (macOS) 或 apt-get install ffmpeg (Linux)"
+			} else {
+				friendlyMsg = fmt.Sprintf("无法获取视频时长：%v。视频已生成成功，但时长信息可能不准确。", err)
+			}
+
+			s.log.Warnw("Failed to probe video duration, duration will be 0",
 				"error", err,
+				"friendly_message", friendlyMsg,
 				"id", videoGenID,
 				"local_path", *localVideoPath)
+			// 注意：这里不阻止视频生成完成，只是记录警告
 		}
 	} else if localVideoPath != nil && s.ffmpeg != nil && duration != nil && *duration > 0 {
 		// 即使有 duration，也验证一下（可选）
