@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/drama-generator/backend/pkg/logger"
@@ -27,7 +28,7 @@ type VolcEngineImageRequest struct {
 	Image                     []string `json:"image,omitempty"`
 	SequentialImageGeneration string   `json:"sequential_image_generation,omitempty"`
 	Size                      string   `json:"size,omitempty"`
-	Watermark                 bool     `json:"watermark,omitempty"`
+	Watermark                 bool     `json:"watermark"`
 }
 
 type VolcEngineImageResponse struct {
@@ -93,13 +94,20 @@ func (c *VolcEngineImageClient) GenerateImage(prompt string, opts ...ImageOption
 		}
 	}
 
+	// 对于 seedream 模型，强制设置 watermark: false（移除水印）
+	// 注意：由于 Watermark 字段已移除 omitempty 标签，false 值会被序列化到 JSON 中
+	watermark := false
+	if strings.Contains(model, "doubao-seedream") || strings.Contains(model, "seedream") {
+		watermark = false // 显式设置为 false，确保 seedream 模型无水印
+	}
+
 	reqBody := VolcEngineImageRequest{
 		Model:                     model,
 		Prompt:                    promptText,
 		Image:                     options.ReferenceImages,
 		SequentialImageGeneration: "disabled",
 		Size:                      size,
-		Watermark:                 false,
+		Watermark:                 watermark,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -112,7 +120,7 @@ func (c *VolcEngineImageClient) GenerateImage(prompt string, opts ...ImageOption
 	logger.L().Debugw("VolcEngine image request",
 		"url", url,
 		"model", model,
-		"request_preview", truncateBody(logBody, 300),
+		"request_preview", logBody,
 	)
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
