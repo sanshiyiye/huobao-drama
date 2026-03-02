@@ -297,56 +297,126 @@ JSON对象应包含：
 }
 
 // GetSceneExtractionPrompt 获取场景提取提示词
-func (p *PromptI18n) GetSceneExtractionPrompt(style string) string {
+func (p *PromptI18n) GetSceneExtractionPrompt(style string, plotStyle string, context string) string {
 	// 默认图片比例
 	imageRatio := "16:9"
+
+	// 处理上下文参数
+	var contextStr string
+	if context != "" {
+		contextStr = ", " + context
+	}
+
+	// 处理风格参数
+	var styleStr string
+	if style != "" && style != "realistic" {
+		styleStr = style
+	}
+	if plotStyle != "" {
+		if styleStr != "" {
+			styleStr += ", " + plotStyle
+		} else {
+			styleStr = plotStyle
+		}
+	}
 
 	if p.IsEnglish() {
 		return fmt.Sprintf(`[Task] Extract all unique scene backgrounds from the script
 
 [Requirements]
-1. Identify all different scenes (location + time combinations) in the script
+1. Identify all different scenes in the script, including:
+   - **Physical Scenes**: Scenes with specific locations and times (e.g., "warehouse at midnight", "street at dusk", "office in the afternoon")
+   - **Abstract Scenes**: Scenes for narration, flashbacks, montages, inner monologues, etc. without specific physical locations
+     * If the script contains narration, historical montages, time passage, flashback sequences, inner monologues, etc., you **MUST** extract abstract scenes
+     * Abstract scene locations can be: "Historical Void", "Memory Space", "Montage Space", "Inner Space", "Time Passage Space", etc.
+     * Abstract scene times can be: "Time Passage", "Eternal", "Dream", "Memory Moment", etc.
+   
 2. Generate detailed **English** image generation prompts for each scene
 3. **Important**: Scene descriptions must be **pure backgrounds** without any characters, people, or actions
 4. Prompt requirements:
    - Must use **English**, no Chinese characters
-   - Detailed description of scene, time, atmosphere, style
+   - **Physical Scenes**: Detailed description of scene, time, atmosphere, style, environmental details
+   - **Abstract Scenes**: Describe as "void/dream/montage space", emphasize atmosphere rather than physical structure
+     * Example: "Abstract void space, floating memory fragments, dreamlike atmosphere, flowing golden light streaks in darkness, visual representation of time passage"
+     * Can include: light and shadow forms, flowing smoke, floating geometric shapes, visual elements of time passage, etc.
    - Must explicitly specify "no people, no characters, empty scene"
-   - Must match the drama's genre and tone
-   - **Style Requirement**: %s
+   - Must match the drama\'s genre and tone
    - **Image Ratio**: %s
-
 
 [Output Format]
 **CRITICAL: Return ONLY a valid JSON array. Do NOT include any markdown code blocks, explanations, or other text. Start directly with [ and end with ].**
 
 Each element containing:
-- location: Location (e.g., "luxurious office")
-- time: Time period (e.g., "afternoon")
-- prompt: Complete English image generation prompt (pure background, explicitly stating no people)`, style, imageRatio)
+- location: Location (physical scenes like "luxurious office", abstract scenes like "Historical Void")
+- time: Time period (physical scenes like "afternoon", abstract scenes like "Time Passage")
+- prompt: Complete English image generation prompt (pure background, explicitly stating no people)
+
+[Prompt Format]
+The prompt field must follow this format:
+"%s%s, pure background scene depicting [location description] at [time]. The scene shows [environment details, architecture, objects, lighting, no characters]. Rich details, high quality, atmospheric lighting. Mood: [environment mood description]. No people, no characters, empty scene."
+
+[Examples]
+Physical Scene Example:
+{
+  "location": "Abandoned Dock Warehouse",
+  "time": "Late Night",
+  "prompt": "%s%s, pure background scene depicting an abandoned dock warehouse at late night. Rusty shelves stand tall, water on the floor reflects dim lights, decayed wooden boxes and fishing nets piled in corners, damp and musty air. Dim cool tones, only flashlight beams flickering in darkness. Rich details, high quality, dim atmosphere. Mood: oppressive, mysterious. No people, no characters, empty scene."
+}
+
+Abstract Scene Example:
+{
+  "location": "Historical Void",
+  "time": "Time Passage",
+  "prompt": "%s%s, pure background scene depicting an abstract historical void space. Floating memory fragments flicker in darkness, flowing golden light streaks symbolize time passage, dreamlike atmosphere, no specific physical structure. Rich details, high quality, abstract atmosphere. Mood: mysterious, eternal, sense of time. No people, no characters, empty scene."`, imageRatio, styleStr, contextStr, styleStr, contextStr, styleStr, contextStr)
 	}
 
 	return fmt.Sprintf(`【任务】从剧本中提取所有唯一的场景背景
 
 【要求】
-1. 识别剧本中所有不同的场景（地点+时间组合）
+1. 识别剧本中所有不同的场景，包括：
+   - **物理场景**：有明确地点和时间的场景（如"仓库·深夜"、"街道·黄昏"、"办公室·下午"）
+   - **抽象场景**：用于旁白、回忆、蒙太奇、内心独白等无具体地点的场景
+     * 如果剧本包含旁白、历史蒙太奇、时间流逝、回忆片段、内心独白等内容，**必须**提取抽象场景
+     * 抽象场景的location可以是："历史虚空"、"回忆空间"、"蒙太奇空间"、"内心空间"、"时间流逝空间"等
+     * 抽象场景的time可以是："时间流逝"、"永恒"、"梦境"、"回忆时刻"等
+   
 2. 为每个场景生成详细的**中文**图片生成提示词（Prompt）
 3. **重要**：场景描述必须是**纯背景**，不能包含人物、角色、动作等元素
 4. Prompt要求：
    - **必须使用中文**，不能包含英文字符
-   - 详细描述场景、时间、氛围、风格
+   - **物理场景**：详细描述场景、时间、氛围、风格、环境细节
+   - **抽象场景**：描述为"虚空/梦境/蒙太奇空间"，强调氛围而非物理结构
+     * 例如："抽象虚空空间，漂浮的记忆碎片，梦幻氛围，黑暗中流动的金色光带，时间流逝的视觉化表现"
+     * 可以包含：光影形态、流动的烟雾、悬浮的几何体、时间流逝的视觉元素等
    - 必须明确说明"无人物、无角色、空场景"
    - 要符合剧本的题材和氛围
-   - **风格要求**：%s
    - **图片比例**：%s
 
 【输出格式】
 **重要：必须只返回纯JSON数组，不要包含任何markdown代码块、说明文字或其他内容。直接以 [ 开头，以 ] 结尾。**
 
 每个元素包含：
-- location：地点（如"豪华办公室"）
-- time：时间（如"下午"）
-- prompt：完整的中文图片生成提示词（纯背景，明确说明无人物）`, style, imageRatio)
+- location：地点（物理场景如"豪华办公室"，抽象场景如"历史虚空"）
+- time：时间（物理场景如"下午"，抽象场景如"时间流逝"）
+- prompt：完整的中文图片生成提示词（纯背景，明确说明无人物）
+
+【Prompt格式】
+prompt字段必须遵循以下格式：
+"%s%s, 纯背景场景，展现[地点描述]在[时间]的环境。画面呈现[环境细节、建筑、物品、光线等，不包含人物]。细节丰富，高质量，氛围光照。情绪：[环境情绪描述]。无人物、无角色、空场景。"
+
+【示例】
+物理场景示例：
+{
+  "location": "废弃码头仓库",
+  "time": "深夜",
+  "prompt": "%s%s, 纯背景场景，展现废弃码头仓库在深夜的环境。锈蚀货架林立，地面积水反射微弱灯光，墙角堆放腐朽木箱和渔网，空气中弥漫潮湿霉味。昏暗冷色调，只有手电筒光束在黑暗中晃动。细节丰富，高质量，昏暗氛围。情绪：压抑、神秘。无人物、无角色、空场景。"
+}
+
+抽象场景示例：
+{
+  "location": "历史虚空",
+  "time": "时间流逝",
+  "prompt": "%s%s, 纯背景场景，展现抽象的历史虚空空间。漂浮的记忆碎片在黑暗中闪烁，流动的金色光带象征时间流逝，梦幻氛围，无具体物理结构。细节丰富，高质量，抽象氛围。情绪：神秘、永恒、时间感。无人物、无角色、空场景。"`, imageRatio, styleStr, contextStr, styleStr, contextStr, styleStr, contextStr)
 }
 
 // GetFirstFramePrompt 获取首帧提示词

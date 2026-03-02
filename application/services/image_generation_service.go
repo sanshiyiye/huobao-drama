@@ -1059,8 +1059,17 @@ func (s *ImageGenerationService) extractBackgroundsFromScript(scriptContent stri
 		return nil, fmt.Errorf("failed to get AI client: %w", err)
 	}
 
-	// 使用国际化提示词
-	systemPrompt := s.promptI18n.GetSceneExtractionPrompt(style)
+	// 获取 drama 信息以获取 PlotStyle
+	var drama models.Drama
+	if err := s.db.Where("id = ?", dramaID).First(&drama).Error; err != nil {
+		s.log.Warnw("Failed to load drama", "error", err, "drama_id", dramaID)
+	}
+
+	// 分析剧本内容，提取剧情背景信息
+	context := s.promptI18n.AnalyzeScriptContext(scriptContent)
+
+	// 使用国际化提示词（传入 style, plotStyle, context）
+	systemPrompt := s.promptI18n.GetSceneExtractionPrompt(style, drama.PlotStyle, context)
 	contentLabel := s.promptI18n.FormatUserPrompt("script_content_label")
 
 	// 根据语言构建不同的格式说明
@@ -1073,7 +1082,7 @@ func (s *ImageGenerationService) extractBackgroundsFromScript(scriptContent stri
       "location": "Location name (English)",
       "time": "Time description (English)",
       "atmosphere": "Atmosphere description (English)",
-      "prompt": "A cinematic anime-style pure background scene depicting [location description] at [time]. The scene shows [environment details, architecture, objects, lighting, no characters]. Style: rich details, high quality, atmospheric lighting. Mood: [environment mood description]."
+      "prompt": "[style prefix], pure background scene depicting [location description] at [time]. The scene shows [environment details, architecture, objects, lighting, no characters]. Rich details, high quality, atmospheric lighting. Mood: [environment mood description]. No people, no characters, empty scene."
     }
   ]
 }
@@ -1086,13 +1095,13 @@ Correct example (note: no characters):
       "location": "Repair Shop Interior",
       "time": "Late Night",
       "atmosphere": "Dim, lonely, industrial",
-      "prompt": "A cinematic anime-style pure background scene depicting a messy repair shop interior at late night. Under dim fluorescent lights, the workbench is scattered with various wrenches, screwdrivers and mechanical parts, oil-stained tool boards and faded posters hang on walls, oil stains on the floor, used tires piled in corners. Style: rich details, high quality, dim atmosphere. Mood: lonely, industrial."
+      "prompt": "[style prefix], pure background scene depicting a messy repair shop interior at late night. Under dim fluorescent lights, the workbench is scattered with various wrenches, screwdrivers and mechanical parts, oil-stained tool boards and faded posters hang on walls, oil stains on the floor, used tires piled in corners. Rich details, high quality, dim atmosphere. Mood: lonely, industrial. No people, no characters, empty scene."
     },
     {
       "location": "City Street",
       "time": "Dusk",
       "atmosphere": "Warm, busy, lively",
-      "prompt": "A cinematic anime-style pure background scene depicting a bustling city street at dusk. Sunset afterglow shines on the asphalt road, neon lights of shops on both sides begin to light up, bicycle racks and bus stops on the street, high-rise buildings in the distance, sky showing orange-red gradient. Style: rich details, high quality, warm atmosphere. Mood: lively, busy."
+      "prompt": "[style prefix], pure background scene depicting a bustling city street at dusk. Sunset afterglow shines on the asphalt road, neon lights of shops on both sides begin to light up, bicycle racks and bus stops on the street, high-rise buildings in the distance, sky showing orange-red gradient. Rich details, high quality, warm atmosphere. Mood: lively, busy. No people, no characters, empty scene."
     }
   ]
 }
@@ -1111,7 +1120,7 @@ Please strictly follow the JSON format and ensure all fields use English.`
       "location": "地点名称（中文）",
       "time": "时间描述（中文）",
       "atmosphere": "氛围描述（中文）",
-      "prompt": "一个电影感的动漫风格纯背景场景，展现[地点描述]在[时间]的环境。画面呈现[环境细节、建筑、物品、光线等，不包含人物]。风格：细节丰富，高质量，氛围光照。情绪：[环境情绪描述]。"
+      "prompt": "[风格前缀], 纯背景场景，展现[地点描述]在[时间]的环境。画面呈现[环境细节、建筑、物品、光线等，不包含人物]。细节丰富，高质量，氛围光照。情绪：[环境情绪描述]。无人物、无角色、空场景。"
     }
   ]
 }
@@ -1124,13 +1133,13 @@ Please strictly follow the JSON format and ensure all fields use English.`
       "location": "维修店内部",
       "time": "深夜",
       "atmosphere": "昏暗、孤独、工业感",
-      "prompt": "一个电影感的动漫风格纯背景场景，展现凌乱的维修店内部在深夜的环境。昏暗的日光灯照射下，工作台上散落着各种扳手、螺丝刀和机械零件，墙上挂着油污斑斑的工具挂板和褪色海报，地面有油渍痕迹，角落堆放着废旧轮胎。风格：细节丰富，高质量，昏暗氛围。情绪：孤独、工业感。"
+      "prompt": "[风格前缀], 纯背景场景，展现凌乱的维修店内部在深夜的环境。昏暗的日光灯照射下，工作台上散落着各种扳手、螺丝刀和机械零件，墙上挂着油污斑斑的工具挂板和褪色海报，地面有油渍痕迹，角落堆放着废旧轮胎。细节丰富，高质量，昏暗氛围。情绪：孤独、工业感。无人物、无角色、空场景。"
     },
     {
       "location": "城市街道",
       "time": "黄昏",
       "atmosphere": "温暖、繁忙、生活气息",
-      "prompt": "一个电影感的动漫风格纯背景场景，展现繁华的城市街道在黄昏时分的环境。夕阳的余晖洒在街道的沥青路面上，两旁的商铺霓虹灯开始点亮，街边有自行车停靠架和公交站牌，远处高楼林立，天空呈现橙红色渐变。风格：细节丰富，高质量，温暖氛围。情绪：生活气息、繁忙。"
+      "prompt": "[风格前缀], 纯背景场景，展现繁华的城市街道在黄昏时分的环境。夕阳的余晖洒在街道的沥青路面上，两旁的商铺霓虹灯开始点亮，街边有自行车停靠架和公交站牌，远处高楼林立，天空呈现橙红色渐变。细节丰富，高质量，温暖氛围。情绪：生活气息、繁忙。无人物、无角色、空场景。"
     }
   ]
 }
@@ -1223,8 +1232,34 @@ func (s *ImageGenerationService) extractBackgroundsWithAI(storyboards []models.S
 			storyboard.StoryboardNumber, location, time, action, description)
 	}
 
-	// 使用国际化提示词
-	systemPrompt := s.promptI18n.GetSceneExtractionPrompt(style)
+	// 从第一个 storyboard 获取 EpisodeID，然后查询 Episode 获取 DramaID
+	var dramaID uint
+	if len(storyboards) > 0 {
+		var episode models.Episode
+		if err := s.db.Where("id = ?", storyboards[0].EpisodeID).First(&episode).Error; err != nil {
+			s.log.Warnw("Failed to load episode", "error", err, "episode_id", storyboards[0].EpisodeID)
+		} else {
+			dramaID = episode.DramaID
+		}
+	}
+
+	// 获取 drama 信息以获取 PlotStyle
+	var drama models.Drama
+	if err := s.db.Where("id = ?", dramaID).First(&drama).Error; err != nil {
+		s.log.Warnw("Failed to load drama", "error", err, "drama_id", dramaID)
+	}
+
+	// 分析分镜内容，提取剧情背景信息（从分镜描述中提取）
+	var scriptText string
+	for _, sb := range storyboards {
+		if sb.Description != nil {
+			scriptText += *sb.Description + " "
+		}
+	}
+	context := s.promptI18n.AnalyzeScriptContext(scriptText)
+
+	// 使用国际化提示词（传入 style, plotStyle, context）
+	systemPrompt := s.promptI18n.GetSceneExtractionPrompt(style, drama.PlotStyle, context)
 	storyboardLabel := s.promptI18n.FormatUserPrompt("storyboard_list_label")
 
 	// 根据语言构建不同的提示词
@@ -1236,7 +1271,7 @@ func (s *ImageGenerationService) extractBackgroundsWithAI(storyboards []models.S
     {
       "location": "Location name (English)",
       "time": "Time description (English)",
-      "prompt": "A cinematic anime-style background depicting [location description] at [time]. The scene shows [detail description]. Style: rich details, high quality, atmospheric lighting. Mood: [mood description].",
+      "prompt": "[style prefix], pure background scene depicting [location description] at [time]. The scene shows [detail description]. Rich details, high quality, atmospheric lighting. Mood: [mood description]. No people, no characters, empty scene.",
       "scene_numbers": [1, 2, 3]
     }
   ]
@@ -1249,13 +1284,13 @@ Correct example:
     {
       "location": "Repair Shop",
       "time": "Late Night",
-      "prompt": "A cinematic anime-style background depicting a messy repair shop interior at late night. Under dim lighting, the workbench is scattered with various tools and parts, with greasy posters hanging on the walls. Style: rich details, high quality, dim atmosphere. Mood: lonely, industrial.",
+      "prompt": "[style prefix], pure background scene depicting a messy repair shop interior at late night. Under dim lighting, the workbench is scattered with various tools and parts, with greasy posters hanging on the walls. Rich details, high quality, dim atmosphere. Mood: lonely, industrial. No people, no characters, empty scene.",
       "scene_numbers": [1, 5, 6, 10, 15]
     },
     {
       "location": "City Panorama",
       "time": "Late Night with Acid Rain",
-      "prompt": "A cinematic anime-style background depicting a coastal city panorama in late night acid rain. Neon lights blur in the rain, skyscrapers shrouded in gray-green rain curtain, streets reflecting colorful lights. Style: rich details, high quality, cyberpunk atmosphere. Mood: oppressive, sci-fi, apocalyptic.",
+      "prompt": "[style prefix], pure background scene depicting a coastal city panorama in late night acid rain. Neon lights blur in the rain, skyscrapers shrouded in gray-green rain curtain, streets reflecting colorful lights. Rich details, high quality, cyberpunk atmosphere. Mood: oppressive, sci-fi, apocalyptic. No people, no characters, empty scene.",
       "scene_numbers": [2, 7]
     }
   ]
@@ -1272,7 +1307,7 @@ Please strictly follow the JSON format and ensure:
     {
       "location": "地点名称（中文）",
       "time": "时间描述（中文）",
-      "prompt": "一个电影感的动漫风格背景，展现[地点描述]在[时间]的场景。画面呈现[细节描述]。风格：细节丰富，高质量，氛围光照。情绪：[情绪描述]。",
+      "prompt": "[风格前缀], 纯背景场景，展现[地点描述]在[时间]的场景。画面呈现[细节描述]。细节丰富，高质量，氛围光照。情绪：[情绪描述]。无人物、无角色、空场景。",
       "scene_numbers": [1, 2, 3]
     }
   ]
@@ -1285,13 +1320,13 @@ Please strictly follow the JSON format and ensure:
     {
       "location": "维修店",
       "time": "深夜",
-      "prompt": "一个电影感的动漫风格背景，展现凌乱的维修店内部在深夜的场景。昏暗的灯光下，工作台上散落着各种工具和零件，墙上挂着油污的海报。风格：细节丰富，高质量，昏暗氛围。情绪：孤独、工业感。",
+      "prompt": "[风格前缀], 纯背景场景，展现凌乱的维修店内部在深夜的场景。昏暗的灯光下，工作台上散落着各种工具和零件，墙上挂着油污的海报。细节丰富，高质量，昏暗氛围。情绪：孤独、工业感。无人物、无角色、空场景。",
       "scene_numbers": [1, 5, 6, 10, 15]
     },
     {
       "location": "城市全景",
       "time": "深夜·酸雨",
-      "prompt": "一个电影感的动漫风格背景，展现沿海城市全景在深夜酸雨中的场景。霓虹灯在雨中模糊，高楼大厦笼罩在灰绿色的雨幕中，街道反射着五颜六色的光。风格：细节丰富，高质量，赛博朋克氛围。情绪：压抑、科幻、末世感。",
+      "prompt": "[风格前缀], 纯背景场景，展现沿海城市全景在深夜酸雨中的场景。霓虹灯在雨中模糊，高楼大厦笼罩在灰绿色的雨幕中，街道反射着五颜六色的光。细节丰富，高质量，赛博朋克氛围。情绪：压抑、科幻、末世感。无人物、无角色、空场景。",
       "scene_numbers": [2, 7]
     }
   ]
