@@ -576,14 +576,41 @@ func (s *VideoGenerationService) getVideoClient(provider string, modelName strin
 	// 根据模型名称获取AI配置
 	var config *models.AIServiceConfig
 	var err error
+	var model string
 
 	if modelName != "" {
 		config, err = s.aiService.GetConfigForModel("video", modelName)
 		if err != nil {
+			// 找不到配置，使用默认配置
 			s.log.Warnw("Failed to get config for model, using default", "model", modelName, "error", err)
 			config, err = s.aiService.GetDefaultConfig("video")
 			if err != nil {
 				return nil, fmt.Errorf("no video AI config found: %w", err)
+			}
+			// ✅ 修复：使用默认配置中的第一个模型，而不是用户传入的 modelName
+			// 这样可以确保使用数据库中配置的正确格式，避免模型名称不匹配的问题
+			if len(config.Model) > 0 {
+				model = config.Model[0]
+				s.log.Infow("Using default config model", "original_model", modelName, "using_model", model)
+			} else {
+				return nil, fmt.Errorf("default config has no models")
+			}
+		} else {
+			// ✅ 修复：找到配置时，使用配置中匹配的模型名称（而不是用户传入的）
+			// 这样可以确保使用数据库中配置的正确格式，避免 API 返回"模型不存在"的错误
+			for _, m := range config.Model {
+				if m == modelName {
+					model = m
+					break
+				}
+			}
+			// 如果配置中没有完全匹配的，使用第一个模型
+			if model == "" && len(config.Model) > 0 {
+				model = config.Model[0]
+				s.log.Warnw("Model name not found in config, using first model", "requested_model", modelName, "using_model", model)
+			}
+			if model == "" {
+				return nil, fmt.Errorf("config has no models")
 			}
 		}
 	} else {
@@ -591,15 +618,16 @@ func (s *VideoGenerationService) getVideoClient(provider string, modelName strin
 		if err != nil {
 			return nil, fmt.Errorf("no video AI config found: %w", err)
 		}
+		if len(config.Model) > 0 {
+			model = config.Model[0]
+		} else {
+			return nil, fmt.Errorf("default config has no models")
+		}
 	}
 
 	// 使用配置中的信息创建客户端
 	baseURL := config.BaseURL
 	apiKey := config.APIKey
-	model := modelName
-	if model == "" && len(config.Model) > 0 {
-		model = config.Model[0]
-	}
 
 	// 根据配置中的 provider 创建对应的客户端
 	var endpoint string
