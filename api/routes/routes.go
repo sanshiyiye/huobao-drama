@@ -145,6 +145,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, log *logger.Logger, localStora
 			episodes.GET("/:episode_id/storyboards", sceneHandler.GetStoryboardsForEpisode)
 			episodes.PUT("/:episode_id/storyboards/order", storyboardHandler.ReorderStoryboards)
 			episodes.GET("/:episode_id/batch-image-progress", batchHandler.GetBatchImageProgress)
+			episodes.GET("/:episode_id/frame-prompts-completion", handlers2.CheckEpisodeFramePromptsCompletion(db, log))
 			episodes.POST("/:episode_id/finalize", dramaHandler.FinalizeEpisode)
 			episodes.GET("/:episode_id/download", dramaHandler.DownloadEpisodeVideo)
 		}

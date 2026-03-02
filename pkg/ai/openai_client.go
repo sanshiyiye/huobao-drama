@@ -2,10 +2,14 @@ package ai
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -83,13 +87,23 @@ func NewOpenAIClient(baseURL, apiKey, model, endpoint string) *OpenAIClient {
 		endpoint = "/v1/chat/completions"
 	}
 
+	transport := &http.Transport{
+		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
+		TLSHandshakeTimeout:   30 * time.Second,
+		ResponseHeaderTimeout: 60 * time.Second,
+		IdleConnTimeout:       90 * time.Second,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+	}
+
 	return &OpenAIClient{
 		BaseURL:  baseURL,
 		APIKey:   apiKey,
 		Model:    model,
 		Endpoint: endpoint,
 		HTTPClient: &http.Client{
-			Timeout: 10 * time.Minute,
+			Timeout:   10 * time.Minute,
+			Transport: transport,
 		},
 	}
 }
@@ -145,17 +159,37 @@ func (c *OpenAIClient) doChatRequest(req *ChatCompletionRequest) (*ChatCompletio
 		"request_preview", requestPreview,
 	)
 
-	httpReq, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
+	const maxAttempts = 3
+	var resp *http.Response
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		httpReq, reqErr := http.NewRequest("POST", url, bytes.NewReader(jsonData))
+		if reqErr != nil {
+			return nil, fmt.Errorf("failed to create request: %w", reqErr)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Authorization", "Bearer "+c.APIKey)
 
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+c.APIKey)
+		resp, err = c.HTTPClient.Do(httpReq)
+		if err == nil {
+			break
+		}
 
-	resp, err := c.HTTPClient.Do(httpReq)
-	if err != nil {
+		// 只对“请求未发送成功”的连接阶段错误重试，避免重复计费。
+		if attempt < maxAttempts && isSafeToRetryTransportError(err) {
+			backoff := time.Duration(1<<(attempt-1)) * time.Second
+			logger.L().Warnw("OpenAI transport error, retrying safely",
+				"attempt", attempt,
+				"max_attempts", maxAttempts,
+				"backoff_seconds", backoff.Seconds(),
+				"error", err.Error(),
+			)
+			time.Sleep(backoff)
+			continue
+		}
 		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	if resp == nil {
+		return nil, fmt.Errorf("failed to send request: no response and no explicit error")
 	}
 	defer resp.Body.Close()
 
@@ -220,6 +254,45 @@ func (c *OpenAIClient) doChatRequest(req *ChatCompletionRequest) (*ChatCompletio
 	}
 
 	return &chatResp, nil
+}
+
+func isSafeToRetryTransportError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) && urlErr.Err != nil {
+		err = urlErr.Err
+	}
+
+	msg := strings.ToLower(err.Error())
+
+	// 一旦进入“等待响应头”阶段，请求通常已发送，避免重试导致重复计费。
+	if strings.Contains(msg, "awaiting headers") {
+		return false
+	}
+
+	retryableMarkers := []string{
+		"tls handshake timeout",
+		"no such host",
+		"connection refused",
+		"network is unreachable",
+		"dial tcp",
+	}
+	for _, marker := range retryableMarkers {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+
+	// 仅在明显属于连接阶段的 timeout 才允许重试。
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return strings.Contains(msg, "handshake") || strings.Contains(msg, "dial")
+	}
+
+	return false
 }
 
 func WithTemperature(temp float64) func(*ChatCompletionRequest) {

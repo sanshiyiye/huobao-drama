@@ -1512,6 +1512,7 @@ import type { Drama } from "@/types/drama";
 import { AppHeader } from "@/components/common";
 import ProfessionalEditor from "@/views/drama/ProfessionalEditor.vue";
 import { getImageUrl, hasImage } from "@/utils/image";
+import { checkEpisodeFramePromptsCompletion } from "@/api/frame";
 
 const route = useRoute();
 const router = useRouter();
@@ -2550,6 +2551,12 @@ const batchGenerateSceneImages = async () => {
 
 const taskProgress = ref(0);
 const taskMessage = ref("");
+const framePromptProgress = ref({
+  total: 0,
+  completed: 0,
+  rate: 0,
+  isChecking: false,
+});
 let pollTimer: any = null;
 
 const generateShots = async () => {
@@ -2608,19 +2615,17 @@ const pollTaskStatus = async (taskId: string) => {
       taskMessage.value = task.message || `处理中... ${task.progress}%`;
 
       if (task.status === "completed") {
-        // 任务完成
+        // 分镜拆分完成
         if (pollTimer) {
           clearInterval(pollTimer);
           pollTimer = null;
         }
-        generatingShots.value = false;
 
-        ElMessage.success($t("workflow.splitSuccess"));
+        // 刷新数据以获取新生成的分镜
+        await loadDramaData();
 
-        // 切换到专业制作 tab（不跳转页面）
-        currentStep.value = "3";
-        const key = getStepStorageKey();
-        if (key) localStorage.setItem(key, "3");
+        // 开始检查帧提示词完成情况
+        await checkFramePromptsCompletion();
       } else if (task.status === "failed") {
         // 任务失败
         if (pollTimer) {
@@ -2646,6 +2651,75 @@ const pollTaskStatus = async (taskId: string) => {
 
   // 每2秒轮询一次
   pollTimer = setInterval(checkStatus, 2000);
+};
+
+// 检查帧提示词完成情况
+const checkFramePromptsCompletion = async () => {
+  if (!currentEpisode.value?.id) {
+    return;
+  }
+
+  // 清除之前的timer（如果有）
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  framePromptProgress.value.isChecking = true;
+  taskMessage.value = "分镜拆分完成，正在生成帧提示词...";
+
+  const checkCompletion = async () => {
+    try {
+      const status = await checkEpisodeFramePromptsCompletion(currentEpisode.value!.id);
+
+      framePromptProgress.value.total = status.total_storyboards;
+      framePromptProgress.value.completed = status.completed_storyboards;
+      framePromptProgress.value.rate = status.completion_rate;
+
+      if (status.is_completed) {
+        // 所有帧提示词都生成完成
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+        generatingShots.value = false;
+        framePromptProgress.value.isChecking = false;
+
+        ElMessage.success($t("workflow.splitSuccess"));
+
+        // 切换到专业制作 tab（不跳转页面）
+        currentStep.value = "3";
+        const key = getStepStorageKey();
+        if (key) localStorage.setItem(key, "3");
+      } else {
+        // 更新进度提示
+        taskMessage.value = `正在生成帧提示词... ${status.completed_storyboards}/${status.total_storyboards} (${status.completion_rate.toFixed(1)}%)`;
+
+        // 继续轮询（如果还没有设置timer）
+        if (!pollTimer) {
+          pollTimer = setInterval(checkCompletion, 2000);
+        }
+      }
+    } catch (error: any) {
+      console.error("检查帧提示词完成情况失败:", error);
+      // 即使检查失败，也允许跳转（避免卡住）
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+      generatingShots.value = false;
+      framePromptProgress.value.isChecking = false;
+      ElMessage.warning("帧提示词检查失败，已跳转到专业制作页面");
+
+      // 切换到专业制作 tab
+      currentStep.value = "3";
+      const key = getStepStorageKey();
+      if (key) localStorage.setItem(key, "3");
+    }
+  };
+
+  // 立即检查一次
+  await checkCompletion();
 };
 
 const regenerateShots = async () => {

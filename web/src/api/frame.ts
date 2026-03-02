@@ -97,3 +97,23 @@ export interface FramePromptRecord {
 export function getStoryboardFramePrompts(storyboardId: number): Promise<{ frame_prompts: FramePromptRecord[] }> {
   return request.get<{ frame_prompts: FramePromptRecord[] }>(`/storyboards/${storyboardId}/frame-prompts`)
 }
+
+// 帧提示词完成情况状态
+export interface FramePromptCompletionStatus {
+  total_storyboards: number
+  completed_storyboards: number
+  is_completed: boolean
+  completion_rate: number
+  storyboard_statuses: Array<{
+    storyboard_id: number
+    completed: boolean
+    generated_types: string[]
+  }>
+}
+
+/**
+ * 检查episode所有分镜的帧提示词完成情况
+ */
+export function checkEpisodeFramePromptsCompletion(episodeId: number): Promise<FramePromptCompletionStatus> {
+  return request.get<FramePromptCompletionStatus>(`/episodes/${episodeId}/frame-prompts-completion`)
+}
