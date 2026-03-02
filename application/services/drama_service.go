@@ -129,68 +129,122 @@ func (s *DramaService) GetDrama(dramaID string) (*models.Drama, error) {
 		if drama.Episodes[i].Duration != durationMinutes {
 			s.db.Model(&models.Episode{}).Where("id = ?", drama.Episodes[i].ID).Update("duration", durationMinutes)
 		}
+	}
 
-		// 查询角色的图片生成状态
+	// ✅ 性能优化：批量查询所有角色的图片生成状态（解决 N+1 查询问题）
+	characterIDs := make([]uint, 0)
+	for i := range drama.Episodes {
 		for j := range drama.Episodes[i].Characters {
-			var imageGen models.ImageGeneration
-			// 查询进行中或失败的任务状态
-			err := s.db.Where("character_id = ? AND (status = ? OR status = ?)",
-				drama.Episodes[i].Characters[j].ID, "pending", "processing").
-				Order("created_at DESC").
-				First(&imageGen).Error
+			characterIDs = append(characterIDs, drama.Episodes[i].Characters[j].ID)
+		}
+	}
 
-			if err == nil {
-				// 找到生成中的记录，设置状态
-				statusStr := string(imageGen.Status)
-				drama.Episodes[i].Characters[j].ImageGenerationStatus = &statusStr
-				if imageGen.ErrorMsg != nil {
-					drama.Episodes[i].Characters[j].ImageGenerationError = imageGen.ErrorMsg
+	if len(characterIDs) > 0 {
+		// 批量查询所有角色的最新图片生成状态
+		var imageGens []models.ImageGeneration
+		
+		// 查询所有相关状态的记录（pending, processing, failed）
+		err := s.db.Where("character_id IN ? AND (status = ? OR status = ? OR status = ?)",
+			characterIDs,
+			models.ImageStatusPending,
+			models.ImageStatusProcessing,
+			models.ImageStatusFailed).
+			Order("created_at DESC").
+			Find(&imageGens).Error
+
+		if err != nil {
+			s.log.Warnw("Failed to batch query character image generations", "error", err)
+		} else {
+			// 构建 character_id -> 最新 ImageGeneration 的映射
+			// 由于已按 created_at DESC 排序，第一个遇到的记录就是最新的
+			charImageGenMap := make(map[uint]*models.ImageGeneration)
+			for k := range imageGens {
+				if imageGens[k].CharacterID != nil {
+					charID := *imageGens[k].CharacterID
+					// 只保留每个角色的最新记录
+					if _, exists := charImageGenMap[charID]; !exists {
+						charImageGenMap[charID] = &imageGens[k]
+					}
 				}
-			} else if errors.Is(err, gorm.ErrRecordNotFound) {
-				// 检查是否有失败的记录
-				err := s.db.Where("character_id = ? AND status = ?",
-					drama.Episodes[i].Characters[j].ID, "failed").
-					Order("created_at DESC").
-					First(&imageGen).Error
+			}
 
-				if err == nil {
-					statusStr := string(imageGen.Status)
-					drama.Episodes[i].Characters[j].ImageGenerationStatus = &statusStr
-					if imageGen.ErrorMsg != nil {
-						drama.Episodes[i].Characters[j].ImageGenerationError = imageGen.ErrorMsg
+			// 填充状态信息到角色对象
+			for i := range drama.Episodes {
+				for j := range drama.Episodes[i].Characters {
+					charID := drama.Episodes[i].Characters[j].ID
+					if imageGen, exists := charImageGenMap[charID]; exists {
+						if imageGen.Status == models.ImageStatusPending || imageGen.Status == models.ImageStatusProcessing {
+							statusStr := string(imageGen.Status)
+							drama.Episodes[i].Characters[j].ImageGenerationStatus = &statusStr
+							if imageGen.ErrorMsg != nil {
+								drama.Episodes[i].Characters[j].ImageGenerationError = imageGen.ErrorMsg
+							}
+						} else if imageGen.Status == models.ImageStatusFailed {
+							statusStr := string(models.ImageStatusFailed)
+							drama.Episodes[i].Characters[j].ImageGenerationStatus = &statusStr
+							if imageGen.ErrorMsg != nil {
+								drama.Episodes[i].Characters[j].ImageGenerationError = imageGen.ErrorMsg
+							}
+						}
 					}
 				}
 			}
 		}
+	}
 
-		// 查询场景的图片生成状态
+	// ✅ 性能优化：批量查询所有场景的图片生成状态（解决 N+1 查询问题）
+	sceneIDs := make([]uint, 0)
+	for i := range drama.Episodes {
 		for j := range drama.Episodes[i].Scenes {
-			var imageGen models.ImageGeneration
-			// 查询进行中或失败的任务状态
-			err := s.db.Where("scene_id = ? AND (status = ? OR status = ?)",
-				drama.Episodes[i].Scenes[j].ID, "pending", "processing").
-				Order("created_at DESC").
-				First(&imageGen).Error
+			sceneIDs = append(sceneIDs, drama.Episodes[i].Scenes[j].ID)
+		}
+	}
 
-			if err == nil {
-				// 找到生成中的记录，设置状态
-				statusStr := string(imageGen.Status)
-				drama.Episodes[i].Scenes[j].ImageGenerationStatus = &statusStr
-				if imageGen.ErrorMsg != nil {
-					drama.Episodes[i].Scenes[j].ImageGenerationError = imageGen.ErrorMsg
+	if len(sceneIDs) > 0 {
+		var imageGens []models.ImageGeneration
+		
+		// 批量查询所有场景的最新图片生成状态
+		err := s.db.Where("scene_id IN ? AND (status = ? OR status = ? OR status = ?)",
+			sceneIDs,
+			models.ImageStatusPending,
+			models.ImageStatusProcessing,
+			models.ImageStatusFailed).
+			Order("created_at DESC").
+			Find(&imageGens).Error
+
+		if err != nil {
+			s.log.Warnw("Failed to batch query scene image generations", "error", err)
+		} else {
+			// 构建 scene_id -> 最新 ImageGeneration 的映射
+			sceneImageGenMap := make(map[uint]*models.ImageGeneration)
+			for k := range imageGens {
+				if imageGens[k].SceneID != nil {
+					sceneID := *imageGens[k].SceneID
+					// 只保留每个场景的最新记录
+					if _, exists := sceneImageGenMap[sceneID]; !exists {
+						sceneImageGenMap[sceneID] = &imageGens[k]
+					}
 				}
-			} else if errors.Is(err, gorm.ErrRecordNotFound) {
-				// 检查是否有失败的记录
-				err := s.db.Where("scene_id = ? AND status = ?",
-					drama.Episodes[i].Scenes[j].ID, "failed").
-					Order("created_at DESC").
-					First(&imageGen).Error
+			}
 
-				if err == nil {
-					statusStr := string(imageGen.Status)
-					drama.Episodes[i].Scenes[j].ImageGenerationStatus = &statusStr
-					if imageGen.ErrorMsg != nil {
-						drama.Episodes[i].Scenes[j].ImageGenerationError = imageGen.ErrorMsg
+			// 填充状态信息到场景对象
+			for i := range drama.Episodes {
+				for j := range drama.Episodes[i].Scenes {
+					sceneID := drama.Episodes[i].Scenes[j].ID
+					if imageGen, exists := sceneImageGenMap[sceneID]; exists {
+						if imageGen.Status == models.ImageStatusPending || imageGen.Status == models.ImageStatusProcessing {
+							statusStr := string(imageGen.Status)
+							drama.Episodes[i].Scenes[j].ImageGenerationStatus = &statusStr
+							if imageGen.ErrorMsg != nil {
+								drama.Episodes[i].Scenes[j].ImageGenerationError = imageGen.ErrorMsg
+							}
+						} else if imageGen.Status == models.ImageStatusFailed {
+							statusStr := string(models.ImageStatusFailed)
+							drama.Episodes[i].Scenes[j].ImageGenerationStatus = &statusStr
+							if imageGen.ErrorMsg != nil {
+								drama.Episodes[i].Scenes[j].ImageGenerationError = imageGen.ErrorMsg
+							}
+						}
 					}
 				}
 			}
@@ -242,12 +296,13 @@ func (s *DramaService) ListDramas(query *DramaListQuery) ([]models.Drama, int64,
 	}
 
 	offset := (query.Page - 1) * query.PageSize
+	
+	// ✅ 性能优化：移除 Preload("Episodes.Storyboards") - 列表页不需要加载所有分镜数据
+	// 列表页前端只需要：id, title, description, updated_at, total_episodes
+	// 如果需要剧集数量，可以从 Episodes 数量获取，不需要加载 Storyboards
 	err := db.Order("updated_at DESC").
 		Offset(offset).
 		Limit(query.PageSize).
-		Preload("Episodes.Storyboards", func(db *gorm.DB) *gorm.DB {
-			return db.Order("storyboards.storyboard_number ASC")
-		}).
 		Find(&dramas).Error
 
 	if err != nil {
@@ -255,18 +310,16 @@ func (s *DramaService) ListDramas(query *DramaListQuery) ([]models.Drama, int64,
 		return nil, 0, err
 	}
 
-	// 统计每个剧本的每个剧集的时长（基于场景时长之和）
-	for i := range dramas {
-		for j := range dramas[i].Episodes {
-			totalDuration := 0
-			for _, scene := range dramas[i].Episodes[j].Storyboards {
-				totalDuration += scene.Duration
-			}
-			// 更新剧集时长（秒转分钟，向上取整）
-			durationMinutes := (totalDuration + 59) / 60
-			dramas[i].Episodes[j].Duration = durationMinutes
-		}
-	}
+	// ✅ 性能优化：移除嵌套循环计算时长
+	// 如果前端需要剧集时长，应该：
+	// 1. 从 Episodes.duration 字段直接获取（数据库已存储）
+	// 2. 或者使用 SQL 聚合查询一次性计算：
+	//    SELECT episode_id, SUM(duration) as total_duration 
+	//    FROM storyboards 
+	//    WHERE episode_id IN (SELECT id FROM episodes WHERE drama_id IN (...))
+	//    GROUP BY episode_id
+	// 
+	// 当前实现：移除循环计算，减少 CPU 和内存消耗
 
 	return dramas, total, nil
 }
@@ -628,42 +681,56 @@ func (s *DramaService) SaveEpisodes(dramaID string, req *SaveEpisodesRequest) er
 		return err
 	}
 
+	// ✅ 性能优化：批量查询所有现有章节，避免 N+1 查询
+	episodeNumbers := make([]int, 0, len(req.Episodes))
+	for _, ep := range req.Episodes {
+		episodeNumbers = append(episodeNumbers, ep.EpisodeNum)
+	}
+
+	var existingEpisodes []models.Episode
+	if len(episodeNumbers) > 0 {
+		if err := s.db.Where("drama_id = ? AND episode_number IN ?", dramaIDUint, episodeNumbers).
+			Find(&existingEpisodes).Error; err != nil {
+			s.log.Errorw("Failed to query existing episodes", "error", err)
+			return err
+		}
+	}
+
+	// 构建 episode_number -> Episode 的映射
+	existingEpisodeMap := make(map[int]*models.Episode)
+	for i := range existingEpisodes {
+		existingEpisodeMap[existingEpisodes[i].EpisodeNum] = &existingEpisodes[i]
+	}
+
 	// 保存剧集：采用更新或创建的方式，避免删除旧剧集（保留角色、场景关联）
 	for _, ep := range req.Episodes {
-		var existingEpisode models.Episode
-		// 查找是否已存在该集数的剧集
-		if err := s.db.Where("drama_id = ? AND episode_number = ?", dramaIDUint, ep.EpisodeNum).First(&existingEpisode).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				// 不存在，创建新剧集
-				episode := models.Episode{
-					DramaID:       dramaIDUint,
-					EpisodeNum:    ep.EpisodeNum,
-					Title:         ep.Title,
-					Description:   ep.Description,
-					ScriptContent: ep.ScriptContent,
-					Duration:      ep.Duration,
-					Status:        "draft",
-				}
+		if existingEpisode, exists := existingEpisodeMap[ep.EpisodeNum]; exists {
+			// 已存在，更新内容
+			updates := map[string]interface{}{
+				"title":          ep.Title,
+				"description":    ep.Description,
+				"script_content": ep.ScriptContent,
+				"duration":       ep.Duration,
+			}
 
-				if err := s.db.Create(&episode).Error; err != nil {
-					s.log.Errorw("Failed to create episode", "error", err, "episode", ep.EpisodeNum)
-					continue
-				}
-			} else {
-				s.log.Errorw("Failed to find episode", "error", err, "episode", ep.EpisodeNum)
+			if err := s.db.Model(existingEpisode).Updates(updates).Error; err != nil {
+				s.log.Errorw("Failed to update episode", "error", err, "episode", ep.EpisodeNum)
 				continue
 			}
 		} else {
-			// 已存在，更新内容
-			updates := map[string]interface{}{
-				"title":         ep.Title,
-				"description":   ep.Description,
-				"script_content": ep.ScriptContent,
-				"duration":      ep.Duration,
+			// 不存在，创建新剧集
+			episode := models.Episode{
+				DramaID:       dramaIDUint,
+				EpisodeNum:    ep.EpisodeNum,
+				Title:         ep.Title,
+				Description:   ep.Description,
+				ScriptContent: ep.ScriptContent,
+				Duration:      ep.Duration,
+				Status:        "draft",
 			}
 
-			if err := s.db.Model(&existingEpisode).Updates(updates).Error; err != nil {
-				s.log.Errorw("Failed to update episode", "error", err, "episode", ep.EpisodeNum)
+			if err := s.db.Create(&episode).Error; err != nil {
+				s.log.Errorw("Failed to create episode", "error", err, "episode", ep.EpisodeNum)
 				continue
 			}
 		}

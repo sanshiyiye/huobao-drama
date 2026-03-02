@@ -2054,10 +2054,16 @@ const loadDramaData = async () => {
     const data = await dramaAPI.get(dramaId);
     drama.value = data;
 
-    if (!hasScript.value) {
+    // ✅ 修复：当新章节不存在时，强制重置到第一步并清空内容
+    if (!currentEpisode.value) {
+      scriptContent.value = "";
+      currentStep.value = "0";
+      // 清除 localStorage 中保存的步骤，避免下次加载时恢复错误的步骤
+      localStorage.removeItem(getStepStorageKey());
+    } else if (!hasScript.value) {
       scriptContent.value = "";
       // 如果没有剧本内容，重置到第一步
-      currentStep.value = 0;
+      currentStep.value = "0";
     }
 
     // 检查是否有生成中的角色或场景，自动启动轮询
