@@ -86,7 +86,7 @@ func (c *OpenAIImageClient) GenerateImage(prompt string, opts ...ImageOption) (*
 	logger.L().Debugw("OpenAI image request",
 		"url", url,
 		"model", model,
-		"request_preview", truncateBody(logBody, 300),
+		"request_preview", logBody,
 	)
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))

@@ -922,6 +922,18 @@ func (s *BatchService) generateVideoForStoryboard(dramaID string, sb *models.Sto
 		return fmt.Errorf("分镜描述过短")
 	}
 
+	// 获取 drama 的 aspect_ratio
+	var drama models.Drama
+	var aspectRatio *string
+	dramaIDUint, err := strconv.ParseUint(dramaID, 10, 32)
+	if err == nil {
+		if err := s.db.Where("id = ?", dramaIDUint).First(&drama).Error; err == nil {
+			if drama.AspectRatio != "" {
+				aspectRatio = &drama.AspectRatio
+			}
+		}
+	}
+
 	req := &GenerateVideoRequest{
 		DramaID:               dramaID,
 		StoryboardID:          &sb.ID,
@@ -934,6 +946,7 @@ func (s *BatchService) generateVideoForStoryboard(dramaID string, sb *models.Sto
 		Provider:              provider,
 		Model:                 model,
 		Duration:              &duration,
+		AspectRatio:           aspectRatio, // 传递项目的宽高比设置
 	}
 	if req.FirstFrameLocalPath == nil && req.FirstFrameURL != nil {
 		req.FirstFrameLocalPath = nil
@@ -1124,7 +1137,7 @@ func (s *BatchService) CancelEpisodeVideoTask(taskID string) error {
 // processEpisodeVideo 异步执行一键章节视频流程（完整流程）
 func (s *BatchService) processEpisodeVideo(taskID string, episodeID string, model string, dramaID string) {
 	var episode models.Episode
-	if err := s.db.Preload("Storyboards").Preload("Drama").Where("id = ?", episodeID).First(&episode).Error; err != nil {
+	if err := s.db.Preload("Storyboards.Background").Preload("Storyboards.Characters").Preload("Drama").Where("id = ?", episodeID).First(&episode).Error; err != nil {
 		s.taskService.UpdateTaskError(taskID, fmt.Errorf("剧集不存在"))
 		return
 	}
@@ -1324,7 +1337,7 @@ func (s *BatchService) processEpisodeVideo(taskID string, episodeID string, mode
 // processEpisodeVideoFromFrames 从生图阶段开始重试（从失败分镜开始，然后继续后续阶段）
 func (s *BatchService) processEpisodeVideoFromFrames(taskID string, episodeID string, model string, dramaID string, previousProgress *EpisodeVideoTaskProgress) {
 	var episode models.Episode
-	if err := s.db.Preload("Storyboards").Preload("Drama").Where("id = ?", episodeID).First(&episode).Error; err != nil {
+	if err := s.db.Preload("Storyboards.Background").Preload("Storyboards.Characters").Preload("Drama").Where("id = ?", episodeID).First(&episode).Error; err != nil {
 		s.taskService.UpdateTaskError(taskID, fmt.Errorf("剧集不存在"))
 		return
 	}
@@ -1407,7 +1420,7 @@ func (s *BatchService) processEpisodeVideoFromFrames(taskID string, episodeID st
 // processEpisodeVideoFromVideos 从视频阶段开始重试（跳过已成功生图的分镜）
 func (s *BatchService) processEpisodeVideoFromVideos(taskID string, episodeID string, model string, dramaID string, previousProgress *EpisodeVideoTaskProgress) {
 	var episode models.Episode
-	if err := s.db.Preload("Storyboards").Preload("Drama").Where("id = ?", episodeID).First(&episode).Error; err != nil {
+	if err := s.db.Preload("Storyboards.Background").Preload("Storyboards.Characters").Preload("Drama").Where("id = ?", episodeID).First(&episode).Error; err != nil {
 		s.taskService.UpdateTaskError(taskID, fmt.Errorf("剧集不存在"))
 		return
 	}

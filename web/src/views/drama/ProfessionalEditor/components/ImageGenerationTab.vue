@@ -266,6 +266,11 @@ watch(() => props.currentFramePrompt, (newVal) => {
   }
 })
 
+// 监听内部提示词变化，同步到父组件
+watch(internalCurrentFramePrompt, (newVal) => {
+  emit('update:current-frame-prompt', newVal)
+})
+
 watch(() => props.selectedFrameType, (newVal) => {
   if (newVal !== undefined) {
     internalSelectedFrameType.value = newVal

@@ -2151,6 +2151,8 @@ const selectedVideoModel = ref<string>("");
 const defaultImageModelName = ref<string>("");
 /** 当前默认图片厂商，用于图片 tab 展示 */
 const defaultImageModelProvider = ref<string>("");
+/** 用户选择的图片模型（从 localStorage 读取，优先于默认模型） */
+const selectedImageModel = ref<string>("");
 const selectedReferenceMode = ref<string>(""); // 参考图模式：single, first_last, multiple, none
 // 批量出片每镜头选择的视频模型，key 为 shot.id
 const batchShotVideoModel = ref<Record<string, string>>({});
@@ -2456,11 +2458,25 @@ const loadVideoModels = async () => {
 const loadDefaultImageModel = async () => {
   try {
     const config = await aiAPI.getDefault("image");
-    defaultImageModelName.value = config?.model ?? "";
-    defaultImageModelProvider.value = config?.provider ?? "";
+    const backendDefaultModel = config?.model ?? "";
+    const backendDefaultProvider = config?.provider ?? "";
+    
+    // 优先使用用户在 EpisodeWorkflow 中选择的模型（如果存在）
+    const savedImageModel = localStorage.getItem(`ai_image_model_${dramaId.value}`);
+    if (savedImageModel) {
+      selectedImageModel.value = savedImageModel;
+      // 显示用户选择的模型，但使用后端默认的 provider（因为 provider 需要从配置中获取）
+      defaultImageModelName.value = savedImageModel;
+      defaultImageModelProvider.value = backendDefaultProvider;
+    } else {
+      selectedImageModel.value = "";
+      defaultImageModelName.value = backendDefaultModel;
+      defaultImageModelProvider.value = backendDefaultProvider;
+    }
   } catch {
     defaultImageModelName.value = "";
     defaultImageModelProvider.value = "";
+    selectedImageModel.value = "";
   }
 };
 
@@ -4890,6 +4906,10 @@ const generateFrameImage = async () => {
 
     const size = getSizeFromAspectRatio(drama.value?.aspect_ratio);
 
+    // 确定实际使用的模型：优先使用用户选择的，否则使用后端默认的
+    const actualModel = selectedImageModel.value || defaultImageModelName.value;
+    const actualProvider = defaultImageModelProvider.value;
+
     const result = await imageAPI.generateImage({
       drama_id: dramaId.value.toString(),
       prompt: currentFramePrompt.value,
@@ -4899,6 +4919,9 @@ const generateFrameImage = async () => {
       size,
       reference_images:
         referenceImages.length > 0 ? referenceImages : undefined,
+      // 传递实际使用的模型和厂商，确保后端使用正确的模型
+      model: actualModel || undefined,
+      provider: actualProvider || undefined,
     });
 
     generatedImages.value.unshift(result);
@@ -5296,6 +5319,8 @@ const generateVideo = async () => {
       provider: provider,
       model: selectedVideoModel.value,
       reference_mode: selectedReferenceMode.value,
+      // 添加 aspect_ratio 参数，使用项目的宽高比设置
+      aspect_ratio: drama.value?.aspect_ratio || "16:9", // 如果没有设置，默认使用 16:9
     };
 
     // 根据参考图模式设置参数

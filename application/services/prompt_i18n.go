@@ -367,7 +367,7 @@ Key Points:
 - **Image Ratio**: %s
 Output Format:
 Return a JSON object containing:
-- prompt: Complete English image generation prompt (detailed description, suitable for AI image generation)
+- prompt: Complete English image generation prompt (detailed description, suitable for AI image generation, must clearly specify position and scale for EACH character/item if there are multiple characters/items)
 - description: Simplified Chinese description (for reference)`, style, imageRatio)
 	}
 
@@ -385,7 +385,7 @@ Return a JSON object containing:
 - **图片比例**：%s
 输出格式：
 返回一个JSON对象，包含：
-- prompt：完整的中文图片生成提示词（详细描述，适合AI图像生成）
+- prompt：完整的中文图片生成提示词（详细描述，适合AI图像生成，如果有多个角色/物品，必须明确说明每个角色/物品的位置及显示比例）
 - description：简化的中文描述（供参考）`, style, imageRatio)
 }
 
@@ -532,7 +532,7 @@ Key Points:
 - **Image Ratio**: %s
 Output Format:
 Return a JSON object containing:
-- prompt: Complete English image generation prompt (detailed description, suitable for AI image generation)
+- prompt: Complete English image generation prompt (detailed description, suitable for AI image generation, must clearly specify position and scale for EACH character/item if there are multiple characters/items)
 - description: Simplified Chinese description (for reference)`, style, imageRatio)
 	}
 
@@ -550,7 +550,7 @@ Return a JSON object containing:
 - **图片比例**：%s
 输出格式：
 返回一个JSON对象，包含：
-- prompt：完整的中文图片生成提示词（详细描述，适合AI图像生成）
+- prompt：完整的中文图片生成提示词（详细描述，适合AI图像生成，如果有多个角色/物品，必须明确说明每个角色/物品的位置及显示比例）
 - description：简化的中文描述（供参考）`, style, imageRatio)
 }
 
@@ -631,7 +631,7 @@ Requirements:
    - age: ""
    - gender: "other"
 4. Appearance MUST include all of the following (none may be omitted):
-   - Image format: character reference MUST be a single composite turnaround sheet that includes side, front, and back views in ONE image with a pure white background. The description must be suitable for generating this format (full body, no background, no scene, no environment)
+   - Image format: character reference MUST be a full body portrait with a pure white background. The description must be suitable for generating this format (full body, standing upright, foot shadow, no background, no scene, no environment)
    - Also include: body type, facial features, hairstyle, clothing style, etc. Do NOT include any scene, background, or environment information, and do NOT include age and gender information (these will be extracted separately)
 5. Generate character appearance according to the script content:
    - Determine racial characteristics based on the script's cultural and historical background
@@ -671,7 +671,7 @@ Each element is a character object containing: name, role, appearance, personali
    - age: ""
    - gender: "other"
 4. 外貌描述（appearance）必须同时包含以下内容，缺一不可：
-   - 图片形式：角色参考图必须是单张三视图合成图（同一张图内包含侧面、正面、背面），且为纯白底（white background）；外貌描述须适合生成此类参考图（全身、无背景、无场景、无环境）
+   - 图片形式：角色参考图必须是全身肖像图，且为纯白底（white background）；外貌描述须适合生成此类参考图（全身、直立、脚部阴影、无背景、无场景、无环境）
    - 此外可包括：体型、面部特征、发型、服装风格等。不要包含任何场景、背景、环境等信息，也不要包含年龄和性别信息（这些将单独提取）
 5. 根据剧本内容生成角色形象：
    - 根据剧本的文化和历史背景确定种族特征
@@ -740,7 +740,7 @@ appearance =  Basic Appearance + Clothing Details + Iconic Features + Temperamen
 #### **Module Details**:
 
 **a) Style Prefix (must start with)**
-- Character format: "%s%s, full body portrait, white background."
+- Character format: "%s%s, full body portrait, standing upright, foot shadow, white background."
   - **Must explicitly state**: "full body portrait" (full body image)
   - **Must explicitly state**: "white background" (white background)
 - Item format: "%s%s, product shot, whole object visible, white background."
@@ -840,7 +840,7 @@ Please organize and return all work results strictly according to the following 
     {
       "name": "Fisherman",
       "role": "main",
-      "appearance": "%s%s, full body portrait, white background. [Basic Appearance]. [Clothing Details]. [Temperament Status].",
+      "appearance": "%s%s, full body portrait, standing upright, foot shadow, white background. [Basic Appearance]. [Clothing Details]. [Temperament Status].",
       "personality": "Weathered and wise",
       "description": "Brief Chinese appearance description",
       "age": "middle-aged",
@@ -882,7 +882,7 @@ appearance = 风格前缀 + 基础外观 + 服饰细节 + 标志性特征 + 气�
 #### **模块详解**：
 
 **a) 风格前缀（必须开头）**
-- 角色格式："%s%s, 全身形象, 白色背景."
+- 角色格式："%s%s, 全身形象, 直立, 脚部阴影, 白色背景."
   - **必须明确说明**："全身形象"（完整展现角色外观）
   - **必须明确说明**："白色背景"（确保后续分镜融合一致性）
 - 物品格式："%s%s, 产品图, 完整可见, 白色背景."
@@ -982,7 +982,7 @@ appearance = 风格前缀 + 基础外观 + 服饰细节 + 标志性特征 + 气�
     {
       "name": "渔夫",
       "role": "main",
-      "appearance": "%s%s, 全身形象, 白色背景. [基础外观]. [服饰细节]. [气质状态].",
+      "appearance": "%s%s, 全身形象, 直立, 脚部阴影, 白色背景. [基础外观]. [服饰细节]. [气质状态].",
       "personality": "饱经风霜且充满智慧",
       "description": "简短的中文外观描述",
       "age": "中年",

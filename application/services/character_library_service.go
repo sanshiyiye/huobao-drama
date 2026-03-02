@@ -335,8 +335,8 @@ func (s *CharacterLibraryService) GenerateCharacterImage(characterID string, ima
 		prompt = character.Name
 	}
 
-	// 强制角色参考图使用单张三视图白底合成图（侧面/正面/背面）
-	prompt += ", single composite turnaround sheet with side view, front view, and back view in one image, pure white background, full body, no scene, no environment"
+	// 角色参考图要求：白底、全身、直立、脚部阴影、无场景
+	prompt += ", pure white background, full body, standing upright, foot shadow, no scene, no environment"
 
 	// 使用已经加载的 drama 的 style 信息
 	if drama.Style != "" && drama.Style != "realistic" {
@@ -352,7 +352,7 @@ func (s *CharacterLibraryService) GenerateCharacterImage(characterID string, ima
 		Prompt:      prompt,
 		Provider:    "openai",    // 或从配置读取
 		Model:       modelName,   // 使用用户指定的模型
-		Size:        "2560x1440", // 3,686,400像素，满足API最低要求（16:9比例）
+		Size:        "1440x2560", // 3,686,400像素，满足API最低要求（9:16比例）
 		Quality:     "standard",
 	}
 
