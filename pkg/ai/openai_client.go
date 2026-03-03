@@ -90,7 +90,7 @@ func NewOpenAIClient(baseURL, apiKey, model, endpoint string) *OpenAIClient {
 	transport := &http.Transport{
 		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
 		TLSHandshakeTimeout:   30 * time.Second,
-		ResponseHeaderTimeout: 60 * time.Second,
+		ResponseHeaderTimeout: 5 * time.Minute, // ✅ 增加到5分钟，以支持长提示词的处理（分镜生成、场景提取等）
 		IdleConnTimeout:       90 * time.Second,
 		MaxIdleConns:          100,
 		MaxIdleConnsPerHost:   10,
