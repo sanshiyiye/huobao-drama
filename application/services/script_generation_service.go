@@ -181,14 +181,12 @@ func (s *ScriptGenerationService) processCharacterGeneration(taskID string, req 
 			result[i].Appearance = strings.ReplaceAll(result[i].Appearance, pattern, "")
 		}
 
-		// 去除性别信息
-		genderPatterns := []string{
-			"男", "女", "其他",
-			"male", "female", "other",
-		}
-		for _, pattern := range genderPatterns {
-			result[i].Appearance = strings.ReplaceAll(result[i].Appearance, pattern, "")
-		}
+		// ✅ 修复：去除性别信息 - 使用正则表达式，只匹配独立的性别词汇
+		// 避免误删"亚洲女性"中的"女"字，只移除作为独立词汇出现的性别信息
+		// 策略：只移除前后有空格、标点或边界的独立性别词汇，保留复合词汇中的性别字（如"亚洲女性"）
+		// 匹配模式：前后有空格、标点或字符串边界的性别词汇
+		genderRegex := regexp.MustCompile(`(?i)(^|[\s\p{P}])(男性|女性|男人|女人|其他|male|female|other|男|女)([\s\p{P}]|$|\b)`)
+		result[i].Appearance = genderRegex.ReplaceAllString(result[i].Appearance, "$1$3")
 
 		// 去除可能残留的标点符号和多余空格
 		result[i].Appearance = regexp.MustCompile(`\s+`).ReplaceAllString(strings.TrimSpace(result[i].Appearance), " ")
